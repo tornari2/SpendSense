@@ -104,8 +104,11 @@ def assign_persona(
         
         # Save to history if requested
         if save_history:
+            # Save both assignments
             save_persona_history(assignment_30d, session=session)
             save_persona_history(assignment_180d, session=session)
+            # Ensure session is committed so history is visible
+            session.commit()
         
         return assignment_30d, assignment_180d
     

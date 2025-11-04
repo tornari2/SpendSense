@@ -18,17 +18,22 @@ if TYPE_CHECKING:
 
 def save_persona_history(
     assignment: "PersonaAssignment",
-    session: Session = None
-) -> PersonaHistory:
+    session: Session = None,
+    skip_duplicates: bool = True
+) -> Optional[PersonaHistory]:
     """
     Save persona assignment to PersonaHistory table.
+    
+    Prevents duplicate entries by checking if the persona has changed
+    since the last assignment.
     
     Args:
         assignment: PersonaAssignment to save
         session: Database session (optional)
+        skip_duplicates: If True, skip saving if persona hasn't changed (default: True)
     
     Returns:
-        PersonaHistory record that was created
+        PersonaHistory record that was created, or None if skipped due to duplicate
     """
     close_session = False
     if session is None:
@@ -36,7 +41,26 @@ def save_persona_history(
         close_session = True
     
     try:
-        # Create history record
+        # Check for duplicate if skip_duplicates is enabled
+        if skip_duplicates:
+            latest = get_latest_persona(
+                user_id=assignment.user_id,
+                window_days=assignment.window_days,
+                session=session
+            )
+            
+            # If latest persona matches current assignment, skip saving
+            if latest is not None:
+                current_persona = assignment.persona_id or "none"
+                if latest.persona == current_persona:
+                    # Persona hasn't changed, return existing record
+                    # Ensure the record is properly attached to this session
+                    if latest not in session:
+                        # Merge the record into this session if it came from a different session
+                        latest = session.merge(latest)
+                    return latest
+        
+        # Persona changed or no previous history exists - save new record
         history_record = PersonaHistory(
             user_id=assignment.user_id,
             persona=assignment.persona_id or "none",

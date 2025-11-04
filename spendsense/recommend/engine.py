@@ -28,6 +28,7 @@ from .offers import get_offers_for_persona, PartnerOffer
 from .eligibility import filter_eligible_offers, EligibilityResult
 from .rationale import generate_education_rationale, generate_offer_rationale, extract_card_info
 from .trace import create_education_trace, create_offer_trace, trace_to_dict
+from spendsense.guardrails.disclosure import append_disclosure
 
 
 @dataclass
@@ -129,7 +130,11 @@ def generate_recommendations(
         )
         recommendations.extend(offer_recs)
         
-        # Save to database
+        # Apply disclosure to all recommendations BEFORE saving
+        for rec in recommendations:
+            rec.content = append_disclosure(rec.content)
+        
+        # Save to database (with disclosure already included)
         _save_recommendations(recommendations, session=session)
         
         return recommendations

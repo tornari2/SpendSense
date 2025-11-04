@@ -2,7 +2,7 @@
 Recommendation API Endpoint
 
 FastAPI endpoint for retrieving recommendations.
-Note: Consent checks will be added in Day 5 (guardrails module).
+Guardrails (consent, tone, disclosure) are integrated.
 """
 
 from datetime import datetime
@@ -13,6 +13,9 @@ from sqlalchemy.orm import Session
 from spendsense.ingest.database import get_session
 from spendsense.ingest.schema import User
 from .engine import generate_recommendations, GeneratedRecommendation
+from spendsense.guardrails import apply_guardrails
+from spendsense.api.exceptions import ConsentRequiredError, UserNotFoundError
+
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
@@ -34,8 +37,8 @@ def get_recommendations(
     """
     Get recommendations for a user.
     
-    Note: Consent check will be added in Day 5 (guardrails module).
-    For now, this endpoint will generate recommendations regardless of consent.
+    CRITICAL: Requires user consent. Returns 403 if consent not granted.
+    Guardrails are automatically applied (consent check, tone validation, disclosure).
     
     Args:
         user_id: User ID
@@ -46,12 +49,13 @@ def get_recommendations(
     
     Raises:
         HTTPException: If user not found or error generating recommendations
+        ConsentRequiredError: If user has not consented
     """
     try:
         # Check if user exists
         user = session.query(User).filter(User.user_id == user_id).first()
         if not user:
-            raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+            raise UserNotFoundError(user_id)
         
         # Generate recommendations
         recommendations = generate_recommendations(
@@ -61,10 +65,21 @@ def get_recommendations(
             max_offers=3
         )
         
+        # Apply guardrails (includes consent check, tone validation, disclosure)
+        filtered_recommendations, violations = apply_guardrails(
+            recommendations=recommendations,
+            user_id=user_id,
+            session=session
+        )
+        
+        # Check if consent was violated (first violation is usually consent)
+        if violations and "Consent check failed" in violations[0]:
+            raise ConsentRequiredError()
+        
         # Format response
         response = {
             "user_id": user_id,
-            "persona": recommendations[0].persona if recommendations else None,
+            "persona": filtered_recommendations[0].persona if filtered_recommendations else None,
             "recommendations": [
                 {
                     "recommendation_id": rec.recommendation_id,
@@ -75,14 +90,19 @@ def get_recommendations(
                     "template_id": rec.template_id,
                     "offer_id": rec.offer_id,
                 }
-                for rec in recommendations
+                for rec in filtered_recommendations
             ],
-            "count": len(recommendations),
-            "generated_at": datetime.now().isoformat()
+            "count": len(filtered_recommendations),
+            "generated_at": datetime.now().isoformat(),
+            "violations": violations if violations else []
         }
         
         return response
     
+    except ConsentRequiredError:
+        raise
+    except UserNotFoundError:
+        raise
     except HTTPException:
         raise
     except Exception as e:

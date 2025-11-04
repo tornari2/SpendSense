@@ -139,13 +139,18 @@ def _validate_user(user_id: str, session: Session, verbose: bool = True) -> Dict
                 if not rec.offer_id:
                     errors.append(f"Missing offer_id for offer recommendation {rec.recommendation_id}")
         
-        # Check database persistence
+        # Check database persistence - verify newly generated recommendations are saved
+        rec_ids = {rec.recommendation_id for rec in recommendations}
         db_recommendations = session.query(Recommendation).filter(
-            Recommendation.user_id == user_id
+            Recommendation.user_id == user_id,
+            Recommendation.recommendation_id.in_(rec_ids)
         ).all()
         
-        if len(db_recommendations) != len(recommendations):
-            errors.append(f"Database count mismatch: {len(db_recommendations)} in DB vs {len(recommendations)} generated")
+        db_rec_ids = {rec.recommendation_id for rec in db_recommendations}
+        missing_ids = rec_ids - db_rec_ids
+        
+        if missing_ids:
+            errors.append(f"Missing recommendations in DB: {len(missing_ids)} recommendations not found")
         
         # Check decision traces in DB
         for rec in recommendations:
