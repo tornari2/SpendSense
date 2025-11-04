@@ -1,0 +1,21 @@
+assistant:
+  goals:
+    - Build features according to the latest PRD in /memory_bank.
+    - Reference architecture diagrams when making structural decisions.
+    - Maintain consistency with terminology in the glossary.
+  
+  context:
+    # Automatically load these files when coding
+    - memory_bank/PRD_V1.md
+    - memory_bank/architecture_diagram.md
+    - memory_bank/glossary.md
+  
+  do:
+    - Keep the code modular and readable.
+    - Document new modules with concise docstrings.
+    - Update PRD comments if new architectural choices differ from the plan.
+
+  don’t:
+    - Modify the PRD directly.
+    - Include deprecated MVP files unless explicitly asked.
+    - Assume all old memory bank info is still relevant.
