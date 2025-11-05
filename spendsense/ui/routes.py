@@ -358,73 +358,6 @@ def user_detail_page(
         for liability in liability_records:
             liabilities[liability.account_id] = liability
     
-    # Build account summary
-    account_summary = {
-        "total_accounts": len(accounts),
-        "accounts_by_type": {},
-        "total_balance": 0,
-        "credit_cards": [],
-        "deposit_accounts": [],  # checking, savings, money_market, hsa, etc.
-        "mortgages": [],  # mortgage accounts
-        "student_loans": []  # student loan accounts
-    }
-    
-    for account in accounts:
-        account_type = account.type
-        if account_type not in account_summary["accounts_by_type"]:
-            account_summary["accounts_by_type"][account_type] = 0
-        account_summary["accounts_by_type"][account_type] += 1
-        
-        if account.type == "credit_card":
-            # Get liability information for this credit card
-            liability = liabilities.get(account.account_id)
-            account_summary["credit_cards"].append({
-                "account_id": account.account_id,
-                "balance": account.balance_current,
-                "credit_limit": account.credit_limit,
-                "utilization": (account.balance_current / account.credit_limit * 100) if account.credit_limit and account.credit_limit > 0 else 0,
-                "apr_percentage": liability.apr_percentage if liability else None,
-                "apr_type": liability.apr_type if liability else None,
-                "minimum_payment_amount": liability.minimum_payment_amount if liability else None,
-                "last_payment_amount": liability.last_payment_amount if liability else None,
-                "is_overdue": liability.is_overdue if liability else False,
-                "next_payment_due_date": liability.next_payment_due_date if liability else None
-            })
-        elif account.type == "mortgage":
-            # Get liability information for this mortgage
-            liability = liabilities.get(account.account_id)
-            account_summary["mortgages"].append({
-                "account_id": account.account_id,
-                "balance": account.balance_current,
-                "interest_rate": liability.interest_rate if liability else None,
-                "minimum_payment_amount": liability.minimum_payment_amount if liability else None,
-                "last_payment_amount": liability.last_payment_amount if liability else None,
-                "is_overdue": liability.is_overdue if liability else False,
-                "next_payment_due_date": liability.next_payment_due_date if liability else None
-            })
-        elif account.type == "student_loan":
-            # Get liability information for this student loan
-            liability = liabilities.get(account.account_id)
-            account_summary["student_loans"].append({
-                "account_id": account.account_id,
-                "balance": account.balance_current,
-                "interest_rate": liability.interest_rate if liability else None,
-                "minimum_payment_amount": liability.minimum_payment_amount if liability else None,
-                "last_payment_amount": liability.last_payment_amount if liability else None,
-                "is_overdue": liability.is_overdue if liability else False,
-                "next_payment_due_date": liability.next_payment_due_date if liability else None
-            })
-        else:
-            # Deposit accounts (checking, savings, money_market, hsa, etc.)
-            account_summary["total_balance"] += (account.balance_current or 0)
-            account_summary["deposit_accounts"].append({
-                "account_id": account.account_id,
-                "type": account.type,
-                "subtype": account.subtype,  # Include subtype for display
-                "balance_current": account.balance_current or 0,
-                "balance_available": account.balance_available or 0
-            })
-    
     # Build recommendations list
     recommendations_list = []
     decision_traces = []
@@ -475,7 +408,6 @@ def user_detail_page(
         "signals_30d": signals_30d.to_dict(),
         "signals_180d": signals_180d.to_dict(),
         "persona_history": persona_history,
-        "account_summary": account_summary,
         "recommendations": recommendations_list,
         "decision_traces": decision_traces
     }

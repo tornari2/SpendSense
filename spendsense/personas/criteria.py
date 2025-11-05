@@ -162,24 +162,22 @@ def check_persona3_subscription_heavy(signals: SignalSet) -> Tuple[bool, str, Di
     if has_enough_merchants and spend_condition:
         matches = True
         reasons = [f"{subs.recurring_merchant_count} recurring merchants"]
+        signals_used['recurring_merchant_count'] = subs.recurring_merchant_count
+        
         if spend_meets_threshold:
             reasons.append(f"${subs.monthly_recurring_spend:.2f}/month recurring spend")
+            signals_used['monthly_recurring_spend'] = subs.monthly_recurring_spend
         if share_meets_threshold:
             reasons.append(f"{subs.subscription_share_percent:.1f}% of total spend")
+            signals_used['subscription_share_percent'] = subs.subscription_share_percent
         
         reasoning = f"Subscription-Heavy: {', '.join(reasons)}"
-        signals_used['recurring_merchant_count'] = subs.recurring_merchant_count
-        signals_used['monthly_recurring_spend'] = subs.monthly_recurring_spend
-        signals_used['subscription_share_percent'] = subs.subscription_share_percent
     else:
         reasoning = "Does not match Subscription-Heavy criteria"
         if not has_enough_merchants:
             reasoning += f" ({subs.recurring_merchant_count} merchants < 3)"
         if not spend_condition:
             reasoning += f" (spend ${subs.monthly_recurring_spend:.2f} < $50 and share {subs.subscription_share_percent:.1f}% < 10%)"
-        signals_used['recurring_merchant_count'] = subs.recurring_merchant_count
-        signals_used['monthly_recurring_spend'] = subs.monthly_recurring_spend
-        signals_used['subscription_share_percent'] = subs.subscription_share_percent
     
     return matches, reasoning, signals_used
 
@@ -225,13 +223,13 @@ def check_persona4_savings_builder(signals: SignalSet) -> Tuple[bool, str, Dict]
         reasons = []
         if growth_rate_meets:
             reasons.append(f"{savings.growth_rate_percent:.1f}% savings growth rate")
+            signals_used['growth_rate_percent'] = savings.growth_rate_percent
         if inflow_meets:
             reasons.append(f"${net_inflow_monthly:.2f}/month net savings inflow")
+            signals_used['net_inflow_monthly'] = net_inflow_monthly
         reasons.append(f"All credit cards below 30% utilization")
         
         reasoning = f"Savings Builder: {', '.join(reasons)}"
-        signals_used['growth_rate_percent'] = savings.growth_rate_percent
-        signals_used['net_inflow_monthly'] = net_inflow_monthly
         signals_used['max_utilization'] = credit.max_utilization_percent
     else:
         reasoning = "Does not match Savings Builder criteria"
@@ -239,9 +237,6 @@ def check_persona4_savings_builder(signals: SignalSet) -> Tuple[bool, str, Dict]
             reasoning += f" (growth {savings.growth_rate_percent:.1f}% < 2% and inflow ${net_inflow_monthly:.2f} < $200)"
         if not all_low_utilization:
             reasoning += f" (max utilization {credit.max_utilization_percent:.1f}% ≥ 30%)"
-        signals_used['growth_rate_percent'] = savings.growth_rate_percent
-        signals_used['net_inflow_monthly'] = net_inflow_monthly
-        signals_used['max_utilization'] = credit.max_utilization_percent
     
     return matches, reasoning, signals_used
 
@@ -342,13 +337,10 @@ def check_persona5_debt_burden(signals: SignalSet) -> Tuple[bool, str, Dict]:
     
     if matches:
         reasoning = f"Debt Burden: {', '.join(reasons)}"
-        signals_used['total_loan_balance'] = loans.total_loan_balance
-        signals_used['average_interest_rate'] = loans.average_interest_rate
-        signals_used['has_mortgage'] = loans.has_mortgage
-        signals_used['has_student_loan'] = loans.has_student_loan
         
-        # Include mortgage-specific signals
-        if loans.has_mortgage:
+        # Only include signals for loans that actually met the criteria
+        if mortgage_matches:
+            signals_used['has_mortgage'] = loans.has_mortgage
             signals_used['mortgage_balance'] = loans.mortgage_balance
             signals_used['mortgage_interest_rate'] = loans.mortgage_interest_rate
             signals_used['mortgage_monthly_payment'] = loans.mortgage_monthly_payment
@@ -358,8 +350,8 @@ def check_persona5_debt_burden(signals: SignalSet) -> Tuple[bool, str, Dict]:
                 signals_used['mortgage_balance_to_income_ratio'] = mortgage_balance_to_income
                 signals_used['mortgage_payment_burden_percent'] = mortgage_payment_burden
         
-        # Include student loan-specific signals
-        if loans.has_student_loan:
+        if student_loan_matches:
+            signals_used['has_student_loan'] = loans.has_student_loan
             signals_used['student_loan_balance'] = loans.student_loan_balance
             signals_used['student_loan_interest_rate'] = loans.student_loan_interest_rate
             signals_used['student_loan_monthly_payment'] = loans.student_loan_monthly_payment
@@ -370,9 +362,11 @@ def check_persona5_debt_burden(signals: SignalSet) -> Tuple[bool, str, Dict]:
                 signals_used['student_loan_payment_burden_percent'] = student_loan_payment_burden
         
         if monthly_income > 0:
-            signals_used['balance_to_income_ratio'] = loans.balance_to_income_ratio
-            signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
             signals_used['monthly_income'] = monthly_income
+            # Calculate overall metrics only if we have income
+            if mortgage_matches or student_loan_matches:
+                signals_used['balance_to_income_ratio'] = loans.balance_to_income_ratio
+                signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
         
         # Include next payment due date and last payment date for context
         if loans.earliest_next_payment_due_date:
@@ -389,12 +383,6 @@ def check_persona5_debt_burden(signals: SignalSet) -> Tuple[bool, str, Dict]:
             student_loan_balance_to_income = loans.student_loan_balance / annual_income
             student_loan_payment_burden = (loans.student_loan_monthly_payment / monthly_income * 100) if monthly_income > 0 else 0.0
             reasoning += f" (student loan: balance-to-income {student_loan_balance_to_income:.2f} < {STUDENT_LOAN_BALANCE_TO_INCOME_THRESHOLD}, payment burden {student_loan_payment_burden:.1f}% < {STUDENT_LOAN_PAYMENT_BURDEN_THRESHOLD}%)"
-        
-        signals_used['total_loan_balance'] = loans.total_loan_balance
-        signals_used['average_interest_rate'] = loans.average_interest_rate
-        if monthly_income > 0:
-            signals_used['balance_to_income_ratio'] = loans.balance_to_income_ratio
-            signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
     
     return matches, reasoning, signals_used
 
