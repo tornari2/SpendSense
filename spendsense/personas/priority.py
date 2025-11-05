@@ -8,8 +8,8 @@ Priority Order:
 1. High Utilization (most urgent financial risk)
 2. Variable Income Budgeter (cash flow instability)
 3. Subscription-Heavy (actionable savings opportunity)
-4. Lifestyle Inflator (behavioral intervention)
-5. Savings Builder (positive reinforcement)
+4. Savings Builder (positive reinforcement)
+5. Debt Burden (loan payment management)
 """
 
 from typing import List, Tuple, Optional
@@ -18,7 +18,7 @@ from .criteria import (
     check_persona2_variable_income,
     check_persona3_subscription_heavy,
     check_persona4_savings_builder,
-    check_persona5_lifestyle_inflator
+    check_persona5_debt_burden
 )
 
 
@@ -27,8 +27,8 @@ PERSONA_PRIORITY = {
     'persona1_high_utilization': 1,
     'persona2_variable_income': 2,
     'persona3_subscription_heavy': 3,
-    'persona5_lifestyle_inflator': 4,
-    'persona4_savings_builder': 5,
+    'persona4_savings_builder': 4,
+    'persona5_debt_burden': 5,
 }
 
 # Persona display names
@@ -37,7 +37,7 @@ PERSONA_NAMES = {
     'persona2_variable_income': 'Variable Income Budgeter',
     'persona3_subscription_heavy': 'Subscription-Heavy',
     'persona4_savings_builder': 'Savings Builder',
-    'persona5_lifestyle_inflator': 'Lifestyle Inflator',
+    'persona5_debt_burden': 'Debt Burden',
 }
 
 
@@ -119,16 +119,10 @@ def evaluate_all_personas(signals_30d, signals_180d=None, window_days=30):
     if matches:
         matching_personas.append(('persona4_savings_builder', reasoning, signals))
     
-    # Persona 5: Lifestyle Inflator (uses 90-day lookback for 30d window, 180d for 180d window)
-    # Similar to Persona 3, Persona 5 can be evaluated for both 30d and 180d windows
-    # For 30d window: uses lifestyle signals calculated with 90-day lookback
-    # For 180d window: uses lifestyle signals calculated with 180-day window
+    # Persona 5: Debt Burden (uses window-specific signals)
     signals_to_use = signals_180d if window_days == 180 and signals_180d else signals_30d
-    # Check if lifestyle signals are available (they're calculated for both 30d and 180d now)
-    if signals_to_use and signals_to_use.lifestyle:
-        matches, reasoning, signals = check_persona5_lifestyle_inflator(signals_to_use)
-        if matches:
-            matching_personas.append(('persona5_lifestyle_inflator', reasoning, signals))
+    matches, reasoning, signals = check_persona5_debt_burden(signals_to_use)
+    if matches:
+        matching_personas.append(('persona5_debt_burden', reasoning, signals))
     
     return matching_personas
-

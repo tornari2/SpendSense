@@ -79,14 +79,14 @@ OFFERS = [
         url="https://example.com/premium-savings"
     ),
     
-    # Budgeting Apps (Variable Income, Lifestyle Inflator)
+    # Budgeting Apps (Variable Income, Debt Burden)
     PartnerOffer(
         offer_id="offer_budgeting_app_1",
         type="budgeting_app",
         name="Smart Budget App - Free Trial",
         description="AI-powered budgeting app that adapts to variable income",
         eligibility=OfferEligibility(),
-        relevant_personas=["persona2_variable_income", "persona5_lifestyle_inflator"],
+        relevant_personas=["persona2_variable_income", "persona5_debt_burden"],
         educational_content="Budgeting apps designed for variable income help you track spending, set percentage-based budgets, and plan for income fluctuations.",
         cta_text="Start Free Trial",
         url="https://example.com/budget-app"
@@ -129,19 +129,62 @@ OFFERS = [
         url="https://example.com/bill-alerts"
     ),
     
-    # Financial Planning Apps (Lifestyle Inflator, Savings Builder)
+    # Financial Planning Apps (Debt Burden, Savings Builder)
     PartnerOffer(
         offer_id="offer_financial_planning_1",
         type="financial_planning_app",
         name="Financial Planner Plus",
-        description="Goal-based financial planning with lifestyle creep prevention",
+        description="Goal-based financial planning with debt management features",
         eligibility=OfferEligibility(
             min_income=40000
         ),
-        relevant_personas=["persona5_lifestyle_inflator", "persona4_savings_builder"],
-        educational_content="Financial planning apps help you set goals, track progress, and prevent lifestyle creep by visualizing your financial future.",
+        relevant_personas=["persona5_debt_burden", "persona4_savings_builder"],
+        educational_content="Financial planning apps help you set goals, track progress, and manage debt payments alongside your savings goals.",
         cta_text="Start Financial Planning",
         url="https://example.com/financial-planner"
+    ),
+    
+    # Loan Refinancing Offers (Debt Burden)
+    PartnerOffer(
+        offer_id="offer_refinancing_1",
+        type="loan_refinancing",
+        name="Mortgage Refinancing Service",
+        description="Compare mortgage refinancing rates and save on monthly payments",
+        eligibility=OfferEligibility(
+            min_credit_score=620
+        ),
+        relevant_personas=["persona5_debt_burden"],
+        educational_content="Refinancing your mortgage could lower your monthly payment and reduce total interest paid over the life of the loan.",
+        cta_text="Check Refinancing Rates",
+        url="https://example.com/mortgage-refinance"
+    ),
+    
+    PartnerOffer(
+        offer_id="offer_student_loan_refinance",
+        type="loan_refinancing",
+        name="Student Loan Refinancing",
+        description="Refinance student loans to potentially lower interest rates",
+        eligibility=OfferEligibility(
+            min_credit_score=650,
+            min_income=35000
+        ),
+        relevant_personas=["persona5_debt_burden"],
+        educational_content="Refinancing student loans can reduce your interest rate and monthly payment, but be aware that you may lose federal loan benefits.",
+        cta_text="Explore Refinancing Options",
+        url="https://example.com/student-loan-refinance"
+    ),
+    
+    # Debt Management Services (Debt Burden)
+    PartnerOffer(
+        offer_id="offer_debt_management",
+        type="debt_management",
+        name="Debt Management Tool",
+        description="Track and optimize all your loan payments in one place",
+        eligibility=OfferEligibility(),
+        relevant_personas=["persona5_debt_burden"],
+        educational_content="Debt management tools help you track all your loans, payment dates, and explore consolidation or refinancing options.",
+        cta_text="Manage Your Loans",
+        url="https://example.com/debt-management"
     ),
     
     # Credit Monitoring Services (High Utilization)

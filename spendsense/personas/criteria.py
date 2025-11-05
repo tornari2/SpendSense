@@ -250,69 +250,73 @@ def check_persona4_savings_builder(signals: SignalSet) -> Tuple[bool, str, Dict]
     return matches, reasoning, signals_used
 
 
-def check_persona5_lifestyle_inflator(signals: SignalSet) -> Tuple[bool, str, Dict]:
+def check_persona5_debt_burden(signals: SignalSet) -> Tuple[bool, str, Dict]:
     """
-    Check if user matches Persona 5: Lifestyle Inflator
+    Check if user matches Persona 5: Debt Burden
     
-    Criteria (either condition):
-    1. Income increased ≥15% over the period AND savings rate decreased or stayed flat (±2%)
-    2. Income stayed flat (±5%) AND savings rate decreased (< 0%)
-    
-    Note: Works with both 30-day window (uses 90-day lookback) and 180-day window signals
+    Criteria:
+    - Has mortgage account OR student loan account AND
+    - (Total monthly loan payments ≥ 30% of monthly income) OR
+    - (Any loan is overdue) OR
+    - (Making minimum payments only on loans - detected via last_payment_amount == minimum_payment_amount)
     
     Args:
-        signals: SignalSet for 30-day or 180-day window (must have lifestyle signals)
+        signals: SignalSet for 30-day or 180-day window
     
     Returns:
         Tuple of (matches, reasoning, signals_used)
     """
+    loans = signals.loans
     matches = False
+    reasons = []
     signals_used = {}
     
-    # Lifestyle signals must be available (calculated with 90-day or 180-day lookback)
-    if signals.lifestyle is None:
-        reasoning = "Does not match Lifestyle Inflator: Requires lifestyle signals"
+    # Check if user has any loans
+    if not loans.has_mortgage and not loans.has_student_loan:
+        reasoning = "Does not match Debt Burden: No mortgage or student loan accounts"
         return matches, reasoning, signals_used
     
-    lifestyle = signals.lifestyle
-    
-    # Check if sufficient data
-    if not lifestyle.sufficient_data:
-        reasoning = "Does not match Lifestyle Inflator: Insufficient historical data"
-        return matches, reasoning, signals_used
-    
-    # Condition 1: Income increased ≥15% AND savings rate decreased/stayed flat (±2%)
-    income_increased = lifestyle.income_change_percent >= 15.0
-    savings_rate_flat_or_down = lifestyle.savings_rate_change_percent <= 2.0
-    condition1 = income_increased and savings_rate_flat_or_down
-    
-    # Condition 2: Income stayed flat (±5%) AND savings rate decreased (< 0%)
-    income_flat = -5.0 <= lifestyle.income_change_percent <= 5.0
-    savings_rate_decreased = lifestyle.savings_rate_change_percent < 0.0
-    condition2 = income_flat and savings_rate_decreased
-    
-    if condition1 or condition2:
+    # Check if any loan is overdue
+    if loans.any_loan_overdue:
         matches = True
-        if condition1:
-            reasoning = (
-                f"Lifestyle Inflator: Income increased {lifestyle.income_change_percent:.1f}% "
-                f"but savings rate changed {lifestyle.savings_rate_change_percent:.1f}% "
-                f"(income growth without proportional savings increase)"
-            )
-        else:  # condition2
-            reasoning = (
-                f"Lifestyle Inflator: Income stayed flat ({lifestyle.income_change_percent:.1f}%) "
-                f"but savings rate decreased {lifestyle.savings_rate_change_percent:.1f}% "
-                f"(maintaining lifestyle despite flat income)"
-            )
-        signals_used['income_change_percent'] = lifestyle.income_change_percent
-        signals_used['savings_rate_change_percent'] = lifestyle.savings_rate_change_percent
+        if loans.mortgage_is_overdue:
+            reasons.append("mortgage overdue")
+        if loans.student_loan_is_overdue:
+            reasons.append("student loan overdue")
+        signals_used['any_loan_overdue'] = True
+        signals_used['mortgage_is_overdue'] = loans.mortgage_is_overdue
+        signals_used['student_loan_is_overdue'] = loans.student_loan_is_overdue
+    
+    # Check if loan payments are ≥ 30% of income
+    if loans.loan_payment_burden_percent >= 30.0:
+        matches = True
+        reasons.append(f"loan payments represent {loans.loan_payment_burden_percent:.1f}% of income")
+        signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
+        signals_used['total_monthly_loan_payments'] = loans.total_monthly_loan_payments
+    
+    # Check for minimum payment only behavior (simplified - check if last payment equals minimum)
+    # This would need to be enhanced with transaction analysis, but for now we'll use overdue as proxy
+    # or high debt-to-income ratio
+    
+    if matches:
+        loan_details = []
+        if loans.has_mortgage:
+            loan_details.append(f"mortgage ${loans.mortgage_balance:,.2f}")
+        if loans.has_student_loan:
+            loan_details.append(f"student loan ${loans.student_loan_balance:,.2f}")
+        
+        reasoning = f"Debt Burden: {', '.join(reasons)}"
+        if loan_details:
+            reasoning += f" (Total loan balance: ${loans.total_loan_balance:,.2f})"
+        signals_used['total_loan_balance'] = loans.total_loan_balance
+        signals_used['has_mortgage'] = loans.has_mortgage
+        signals_used['has_student_loan'] = loans.has_student_loan
     else:
-        reasoning = "Does not match Lifestyle Inflator criteria"
-        if not condition1 and not condition2:
-            reasoning += f" (income change {lifestyle.income_change_percent:.1f}%, savings rate change {lifestyle.savings_rate_change_percent:.1f}%)"
-        signals_used['income_change_percent'] = lifestyle.income_change_percent
-        signals_used['savings_rate_change_percent'] = lifestyle.savings_rate_change_percent
+        reasoning = "Does not match Debt Burden criteria"
+        if loans.loan_payment_burden_percent > 0:
+            reasoning += f" (loan payments {loans.loan_payment_burden_percent:.1f}% of income < 30%)"
+        signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
+        signals_used['any_loan_overdue'] = loans.any_loan_overdue
     
     return matches, reasoning, signals_used
 

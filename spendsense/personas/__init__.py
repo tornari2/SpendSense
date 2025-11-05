@@ -17,7 +17,7 @@ from .criteria import (
     check_persona2_variable_income,
     check_persona3_subscription_heavy,
     check_persona4_savings_builder,
-    check_persona5_lifestyle_inflator
+    check_persona5_debt_burden
 )
 from .history import save_persona_history, get_persona_history
 
@@ -28,7 +28,7 @@ __all__ = [
     'check_persona2_variable_income',
     'check_persona3_subscription_heavy',
     'check_persona4_savings_builder',
-    'check_persona5_lifestyle_inflator',
+    'check_persona5_debt_burden',
     'save_persona_history',
     'get_persona_history'
 ]

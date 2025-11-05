@@ -67,16 +67,18 @@
                     <ul>
                         <li>Number of Credit Cards: <strong>{{ user_detail.signals_30d.credit.num_credit_cards }}</strong></li>
                         <li>Max Utilization: 
-                            <strong class="utilization-{{ 'high' if user_detail.signals_30d.credit.max_utilization_percent > 50 else ('medium' if user_detail.signals_30d.credit.max_utilization_percent > 30 else 'low') }}">
-                                {{ "%.1f"|format(user_detail.signals_30d.credit.max_utilization_percent) }}%
-                            </strong>
+                            <strong>{{ "%.1f"|format(user_detail.signals_30d.credit.max_utilization_percent) }}%</strong>
                         </li>
                         <li>Flags: 
-                            <span class="badge {{ 'badge-warning' if user_detail.signals_30d.credit.flag_30_percent else 'badge-inactive' }}">30%</span>
-                            <span class="badge {{ 'badge-warning' if user_detail.signals_30d.credit.flag_50_percent else 'badge-inactive' }}">50%</span>
-                            <span class="badge {{ 'badge-error' if user_detail.signals_30d.credit.flag_80_percent else 'badge-inactive' }}">80%</span>
+                            {% set util_30d = user_detail.signals_30d.credit.max_utilization_percent %}
+                            {% set bold_30 = util_30d >= 30 and util_30d < 50 %}
+                            {% set bold_50 = util_30d >= 50 and util_30d < 80 %}
+                            {% set bold_80 = util_30d >= 80 %}
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_30d.credit.flag_30_percent else 'badge-inactive' }} {% if bold_30 %}utilization-flag-bold{% endif %}">30%</span>
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_30d.credit.flag_50_percent else 'badge-inactive' }} {% if bold_50 %}utilization-flag-bold{% endif %}">50%</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_30d.credit.flag_80_percent else 'badge-inactive' }} {% if bold_80 %}utilization-flag-bold{% endif %}">80%</span>
                             <span class="badge {{ 'badge-error' if user_detail.signals_30d.credit.is_overdue else 'badge-inactive' }}">Overdue</span>
-                            <span class="badge {{ 'badge-warning' if user_detail.signals_30d.credit.minimum_payment_only else 'badge-inactive' }}">Minimum Payment Only</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_30d.credit.minimum_payment_only else 'badge-inactive' }}">Minimum Payment Only</span>
                             <span class="badge {{ 'badge-error' if user_detail.signals_30d.credit.interest_charges_present else 'badge-inactive' }}">Interest Charges</span>
                         </li>
                     </ul>
@@ -90,6 +92,28 @@
                         <li>Cash Flow Buffer: <strong>{{ "%.1f"|format(user_detail.signals_30d.income.cash_flow_buffer_months) }} months</strong></li>
                     </ul>
                 </div>
+                
+                {% if user_detail.signals_30d.loans.has_mortgage or user_detail.signals_30d.loans.has_student_loan %}
+                <div class="signal-card">
+                    <h5>Loans</h5>
+                    <ul>
+                        <li>Total Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.total_loan_balance) }}</strong></li>
+                        <li>Monthly Loan Payments: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.total_monthly_loan_payments) }}</strong></li>
+                        {% if user_detail.signals_30d.loans.loan_payment_burden_percent > 0 %}
+                        <li>Payment Burden: <strong>{{ "%.1f"|format(user_detail.signals_30d.loans.loan_payment_burden_percent) }}% of income</strong></li>
+                        {% endif %}
+                        {% if user_detail.signals_30d.loans.has_mortgage %}
+                        <li>Mortgage Balance: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.mortgage_balance) }}</strong></li>
+                        {% endif %}
+                        {% if user_detail.signals_30d.loans.has_student_loan %}
+                        <li>Student Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.student_loan_balance) }}</strong></li>
+                        {% endif %}
+                        {% if user_detail.signals_30d.loans.any_loan_overdue %}
+                        <li>Status: <span class="badge badge-error">Overdue</span></li>
+                        {% endif %}
+                    </ul>
+                </div>
+                {% endif %}
             </div>
         </div>
         
@@ -120,16 +144,18 @@
                     <ul>
                         <li>Number of Credit Cards: <strong>{{ user_detail.signals_180d.credit.num_credit_cards }}</strong></li>
                         <li>Max Utilization: 
-                            <strong class="utilization-{{ 'high' if user_detail.signals_180d.credit.max_utilization_percent > 50 else ('medium' if user_detail.signals_180d.credit.max_utilization_percent > 30 else 'low') }}">
-                                {{ "%.1f"|format(user_detail.signals_180d.credit.max_utilization_percent) }}%
-                            </strong>
+                            <strong>{{ "%.1f"|format(user_detail.signals_180d.credit.max_utilization_percent) }}%</strong>
                         </li>
                         <li>Flags: 
-                            <span class="badge {{ 'badge-warning' if user_detail.signals_180d.credit.flag_30_percent else 'badge-inactive' }}">30%</span>
-                            <span class="badge {{ 'badge-warning' if user_detail.signals_180d.credit.flag_50_percent else 'badge-inactive' }}">50%</span>
-                            <span class="badge {{ 'badge-error' if user_detail.signals_180d.credit.flag_80_percent else 'badge-inactive' }}">80%</span>
+                            {% set util_180d = user_detail.signals_180d.credit.max_utilization_percent %}
+                            {% set bold_30 = util_180d >= 30 and util_180d < 50 %}
+                            {% set bold_50 = util_180d >= 50 and util_180d < 80 %}
+                            {% set bold_80 = util_180d >= 80 %}
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_180d.credit.flag_30_percent else 'badge-inactive' }} {% if bold_30 %}utilization-flag-bold{% endif %}">30%</span>
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_180d.credit.flag_50_percent else 'badge-inactive' }} {% if bold_50 %}utilization-flag-bold{% endif %}">50%</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_180d.credit.flag_80_percent else 'badge-inactive' }} {% if bold_80 %}utilization-flag-bold{% endif %}">80%</span>
                             <span class="badge {{ 'badge-error' if user_detail.signals_180d.credit.is_overdue else 'badge-inactive' }}">Overdue</span>
-                            <span class="badge {{ 'badge-warning' if user_detail.signals_180d.credit.minimum_payment_only else 'badge-inactive' }}">Minimum Payment Only</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_180d.credit.minimum_payment_only else 'badge-inactive' }}">Minimum Payment Only</span>
                             <span class="badge {{ 'badge-error' if user_detail.signals_180d.credit.interest_charges_present else 'badge-inactive' }}">Interest Charges</span>
                         </li>
                     </ul>
@@ -143,6 +169,28 @@
                         <li>Cash Flow Buffer: <strong>{{ "%.1f"|format(user_detail.signals_180d.income.cash_flow_buffer_months) }} months</strong></li>
                     </ul>
                 </div>
+                
+                {% if user_detail.signals_180d.loans.has_mortgage or user_detail.signals_180d.loans.has_student_loan %}
+                <div class="signal-card">
+                    <h5>Loans</h5>
+                    <ul>
+                        <li>Total Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.total_loan_balance) }}</strong></li>
+                        <li>Monthly Loan Payments: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.total_monthly_loan_payments) }}</strong></li>
+                        {% if user_detail.signals_180d.loans.loan_payment_burden_percent > 0 %}
+                        <li>Payment Burden: <strong>{{ "%.1f"|format(user_detail.signals_180d.loans.loan_payment_burden_percent) }}% of income</strong></li>
+                        {% endif %}
+                        {% if user_detail.signals_180d.loans.has_mortgage %}
+                        <li>Mortgage Balance: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.mortgage_balance) }}</strong></li>
+                        {% endif %}
+                        {% if user_detail.signals_180d.loans.has_student_loan %}
+                        <li>Student Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.student_loan_balance) }}</strong></li>
+                        {% endif %}
+                        {% if user_detail.signals_180d.loans.any_loan_overdue %}
+                        <li>Status: <span class="badge badge-error">Overdue</span></li>
+                        {% endif %}
+                    </ul>
+                </div>
+                {% endif %}
             </div>
         </div>
     </section>
@@ -193,27 +241,6 @@
     <section class="section">
         <h3>Account Summary</h3>
         <div class="account-summary">
-            <div class="summary-stats">
-                <div class="stat-item">
-                    <label>Total Accounts:</label>
-                    <span>{{ user_detail.account_summary.total_accounts }}</span>
-                </div>
-                <div class="stat-item">
-                    <label>Total Deposit Balance:</label>
-                    <span>${{ "%.2f"|format(user_detail.account_summary.total_balance) }}</span>
-                </div>
-                {% if user_detail.account_summary.accounts_by_type %}
-                <div class="stat-item">
-                    <label>Accounts by Type:</label>
-                    <span>
-                        {% for type, count in user_detail.account_summary.accounts_by_type.items() %}
-                            {{ type }}: {{ count }}{% if not loop.last %}, {% endif %}
-                        {% endfor %}
-                    </span>
-                </div>
-                {% endif %}
-            </div>
-            
             {% if user_detail.account_summary.deposit_accounts %}
             <h4>Deposit Accounts</h4>
             <table class="account-table">
@@ -240,8 +267,12 @@
                         </td>
                         <td>${{ "%.2f"|format(account.balance_current) }}</td>
                         <td>
-                            {% if account.type == "checking" or account.subtype in ["Savings", "Money Market", "HSA"] %}
+                            {% if account.type == "checking" or account.type == "savings" %}
+                                {% if account.balance_available is not none %}
                                 ${{ "%.2f"|format(account.balance_available) }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
                             {% else %}
                                 <span class="text-muted">N/A</span>
                             {% endif %}
@@ -312,6 +343,126 @@
                         </td>
                         <td>
                             {% if cc.is_overdue %}
+                                <span class="badge badge-error">Overdue</span>
+                            {% else %}
+                                <span class="badge badge-success">Current</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            
+            {% if user_detail.account_summary.mortgages %}
+            <h4>Mortgages</h4>
+            <table class="loan-table">
+                <thead>
+                    <tr>
+                        <th>Account ID</th>
+                        <th>Balance</th>
+                        <th>Interest Rate</th>
+                        <th>Monthly Payment</th>
+                        <th>Last Payment</th>
+                        <th>Next Payment Due</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mortgage in user_detail.account_summary.mortgages %}
+                    <tr>
+                        <td><code>{{ mortgage.account_id }}</code></td>
+                        <td>${{ "%.2f"|format(mortgage.balance) }}</td>
+                        <td>
+                            {% if mortgage.interest_rate %}
+                                {{ "%.2f"|format(mortgage.interest_rate) }}%
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if mortgage.minimum_payment_amount %}
+                                ${{ "%.2f"|format(mortgage.minimum_payment_amount) }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if mortgage.last_payment_amount %}
+                                ${{ "%.2f"|format(mortgage.last_payment_amount) }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if mortgage.next_payment_due_date %}
+                                {{ mortgage.next_payment_due_date.strftime('%Y-%m-%d') }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if mortgage.is_overdue %}
+                                <span class="badge badge-error">Overdue</span>
+                            {% else %}
+                                <span class="badge badge-success">Current</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            
+            {% if user_detail.account_summary.student_loans %}
+            <h4>Student Loans</h4>
+            <table class="loan-table">
+                <thead>
+                    <tr>
+                        <th>Account ID</th>
+                        <th>Balance</th>
+                        <th>Interest Rate</th>
+                        <th>Monthly Payment</th>
+                        <th>Last Payment</th>
+                        <th>Next Payment Due</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for loan in user_detail.account_summary.student_loans %}
+                    <tr>
+                        <td><code>{{ loan.account_id }}</code></td>
+                        <td>${{ "%.2f"|format(loan.balance) }}</td>
+                        <td>
+                            {% if loan.interest_rate %}
+                                {{ "%.2f"|format(loan.interest_rate) }}%
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if loan.minimum_payment_amount %}
+                                ${{ "%.2f"|format(loan.minimum_payment_amount) }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if loan.last_payment_amount %}
+                                ${{ "%.2f"|format(loan.last_payment_amount) }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if loan.next_payment_due_date %}
+                                {{ loan.next_payment_due_date.strftime('%Y-%m-%d') }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if loan.is_overdue %}
                                 <span class="badge badge-error">Overdue</span>
                             {% else %}
                                 <span class="badge badge-success">Current</span>

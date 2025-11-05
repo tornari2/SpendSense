@@ -305,12 +305,12 @@ def user_detail_page(
     # Get accounts
     accounts = session.query(Account).filter(Account.user_id == user_id).all()
     
-    # Get liabilities for credit cards
-    credit_account_ids = [acc.account_id for acc in accounts if acc.type == "credit_card"]
+    # Get liabilities for credit cards, mortgages, and student loans
+    loan_account_ids = [acc.account_id for acc in accounts if acc.type in ["credit_card", "mortgage", "student_loan"]]
     liabilities = {}
-    if credit_account_ids:
+    if loan_account_ids:
         liability_records = session.query(Liability).filter(
-            Liability.account_id.in_(credit_account_ids)
+            Liability.account_id.in_(loan_account_ids)
         ).all()
         for liability in liability_records:
             liabilities[liability.account_id] = liability
@@ -321,7 +321,9 @@ def user_detail_page(
         "accounts_by_type": {},
         "total_balance": 0,
         "credit_cards": [],
-        "deposit_accounts": []  # checking, savings, money_market, hsa, etc.
+        "deposit_accounts": [],  # checking, savings, money_market, hsa, etc.
+        "mortgages": [],  # mortgage accounts
+        "student_loans": []  # student loan accounts
     }
     
     for account in accounts:
@@ -340,6 +342,30 @@ def user_detail_page(
                 "utilization": (account.balance_current / account.credit_limit * 100) if account.credit_limit and account.credit_limit > 0 else 0,
                 "apr_percentage": liability.apr_percentage if liability else None,
                 "apr_type": liability.apr_type if liability else None,
+                "minimum_payment_amount": liability.minimum_payment_amount if liability else None,
+                "last_payment_amount": liability.last_payment_amount if liability else None,
+                "is_overdue": liability.is_overdue if liability else False,
+                "next_payment_due_date": liability.next_payment_due_date if liability else None
+            })
+        elif account.type == "mortgage":
+            # Get liability information for this mortgage
+            liability = liabilities.get(account.account_id)
+            account_summary["mortgages"].append({
+                "account_id": account.account_id,
+                "balance": account.balance_current,
+                "interest_rate": liability.interest_rate if liability else None,
+                "minimum_payment_amount": liability.minimum_payment_amount if liability else None,
+                "last_payment_amount": liability.last_payment_amount if liability else None,
+                "is_overdue": liability.is_overdue if liability else False,
+                "next_payment_due_date": liability.next_payment_due_date if liability else None
+            })
+        elif account.type == "student_loan":
+            # Get liability information for this student loan
+            liability = liabilities.get(account.account_id)
+            account_summary["student_loans"].append({
+                "account_id": account.account_id,
+                "balance": account.balance_current,
+                "interest_rate": liability.interest_rate if liability else None,
                 "minimum_payment_amount": liability.minimum_payment_amount if liability else None,
                 "last_payment_amount": liability.last_payment_amount if liability else None,
                 "is_overdue": liability.is_overdue if liability else False,

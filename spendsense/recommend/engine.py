@@ -464,21 +464,38 @@ def _extract_template_variables(
         variables['down_payment_target'] = 50000
         variables['increase_amount'] = variables['monthly_savings'] * 0.2
     
-    elif persona_id == 'persona5_lifestyle_inflator':
-        if signals_180d.lifestyle:
-            variables['income_change'] = signals_180d.lifestyle.income_change_percent
-            savings_rate_change = signals_180d.lifestyle.savings_rate_change_percent
-            variables['savings_change_text'] = (
-                "decreased" if savings_rate_change < -2
-                else "stayed flat" if abs(savings_rate_change) <= 2
-                else "increased"
-            )
-            variables['savings_percent'] = 20
-            variables['target_percent'] = 20
-            variables['additional_savings'] = 200
-            variables['goal1_target'] = "$10,000 emergency fund"
-            variables['goal2_target'] = "$50,000 down payment"
-            variables['goal3_target'] = "$100,000 retirement"
+    elif persona_id == 'persona5_debt_burden':
+        # Loan burden variables
+        variables['total_monthly_payments'] = signals_30d.loans.total_monthly_loan_payments
+        variables['payment_burden'] = signals_30d.loans.loan_payment_burden_percent
+        variables['total_balance'] = signals_30d.loans.total_loan_balance
+        variables['num_loans'] = signals_30d.loans.num_loans
+        
+        # Loan type details
+        if signals_30d.loans.has_mortgage:
+            variables['loan_type'] = "mortgage"
+            variables['interest_rate'] = signals_30d.loans.mortgage_interest_rate
+            variables['current_payment'] = signals_30d.loans.mortgage_monthly_payment
+        elif signals_30d.loans.has_student_loan:
+            variables['loan_type'] = "student loan"
+            variables['interest_rate'] = signals_30d.loans.student_loan_interest_rate
+            variables['current_payment'] = signals_30d.loans.student_loan_monthly_payment
+        
+        # Estimated refinancing savings (simplified - 1% rate reduction)
+        if variables.get('interest_rate', 0) > 0:
+            variables['potential_payment'] = variables['current_payment'] * 0.95  # ~5% reduction
+            variables['monthly_savings'] = variables['current_payment'] * 0.05
+        
+        # IDR estimate (simplified - 10% of income)
+        if signals_30d.income.payroll_detected and signals_30d.income.total_income > 0:
+            monthly_income = (signals_30d.income.total_income / signals_30d.window_days) * 30
+            variables['estimated_idr_payment'] = monthly_income * 0.10
+        
+        # Minimum payment
+        if signals_30d.loans.has_mortgage:
+            variables['min_payment'] = signals_30d.loans.mortgage_monthly_payment
+        elif signals_30d.loans.has_student_loan:
+            variables['min_payment'] = signals_30d.loans.student_loan_monthly_payment
     
     return variables
 

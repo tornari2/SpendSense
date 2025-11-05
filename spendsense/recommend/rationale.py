@@ -209,35 +209,20 @@ def generate_education_rationale(
             f"This content will help you optimize your savings strategy and reach your goals faster."
         )
     
-    elif persona_id == 'persona5_lifestyle_inflator':
-        if signals.lifestyle:
-            income_change = signals.lifestyle.income_change_percent
-            savings_rate_change = signals.lifestyle.savings_rate_change_percent
-            
-            variables['income_change'] = income_change
-            variables['savings_change_text'] = (
-                "decreased" if savings_rate_change < -2 
-                else "stayed flat" if abs(savings_rate_change) <= 2
-                else "increased"
-            )
-            variables['savings_percent'] = 20  # Recommended percentage
-            variables['target_percent'] = 20
-            
-            # Estimate additional savings if rate maintained
-            # Simplified calculation
-            variables['additional_savings'] = 200  # Example
-            
-            variables['goal1_target'] = "$10,000 emergency fund"
-            variables['goal2_target'] = "$50,000 down payment"
-            variables['goal3_target'] = "$100,000 retirement"
-            
-            rationale = (
-                f"Your income increased {income_change:.1f}% but your savings rate "
-                f"{variables['savings_change_text']}. This content will help you prevent "
-                f"lifestyle creep and maintain healthy savings habits."
-            )
-        else:
-            rationale = "This content will help you manage lifestyle inflation as your income grows."
+    elif persona_id == 'persona5_debt_burden':
+        # Loan burden rationale
+        total_payments = signals.loans.total_monthly_loan_payments
+        payment_burden = signals.loans.loan_payment_burden_percent
+        total_balance = signals.loans.total_loan_balance
+        
+        rationale = (
+            f"Your monthly loan payments of ${total_payments:.2f} represent {payment_burden:.1f}% of your income. "
+            f"With a total loan balance of ${total_balance:,.2f}, this content will help you manage your "
+            f"debt burden and explore options to reduce your monthly payments."
+        )
+        
+        if signals.loans.any_loan_overdue:
+            rationale += " You have overdue loan payments that need immediate attention."
     
     else:
         rationale = f"This educational content is relevant to your financial situation."
@@ -297,13 +282,13 @@ def generate_offer_rationale(
             f"you maximize your savings growth."
         )
     
-    elif 'persona5_lifestyle_inflator' in offer.relevant_personas:
-        if signals.lifestyle:
-            income_change = signals.lifestyle.income_change_percent
-            rationale_parts.append(
-                f"As your income grows ({income_change:.1f}% increase), this tool can help "
-                f"you maintain healthy financial habits and prevent lifestyle creep."
-            )
+    elif 'persona5_debt_burden' in offer.relevant_personas:
+        total_payments = signals.loans.total_monthly_loan_payments
+        payment_burden = signals.loans.loan_payment_burden_percent
+        rationale_parts.append(
+            f"Your loan payments of ${total_payments:.2f}/month ({payment_burden:.1f}% of income) "
+            f"make this offer particularly relevant for managing your debt burden."
+        )
     
     # Combine rationale parts
     rationale = " ".join(rationale_parts)

@@ -54,8 +54,8 @@ def calculate_coverage(session: Session) -> Dict:
             if signals_30d.income.payroll_detected:
                 behavior_count += 1
             
-            # Lifestyle (from 180d signals if available)
-            if signals_180d and signals_180d.lifestyle and signals_180d.lifestyle.sufficient_data:
+            # Loans (for debt burden persona)
+            if signals_30d.loans.total_loan_balance > 0:
                 behavior_count += 1
             
             if behavior_count >= 3:

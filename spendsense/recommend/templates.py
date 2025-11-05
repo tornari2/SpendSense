@@ -266,63 +266,92 @@ PERSONA4_TEMPLATES = [
     ),
 ]
 
-# Persona 5: Lifestyle Inflator Templates
+# Persona 5: Debt Burden Templates
 PERSONA5_TEMPLATES = [
     EducationTemplate(
-        template_id="p5_pay_yourself_first",
-        persona_id="persona5_lifestyle_inflator",
-        category="savings_automation",
-        title="Pay Yourself First Automation",
+        template_id="p5_loan_burden_awareness",
+        persona_id="persona5_debt_burden",
+        category="debt_management",
+        title="Understanding Your Loan Payment Burden",
         content=(
-            "Your income increased {income_change}% over the past 6 months, but your savings "
-            "rate {savings_change_text}. Implement 'pay yourself first' automation: before "
-            "spending on lifestyle upgrades, automatically transfer {savings_percent}% of each "
-            "paycheck to savings. This ensures savings grow proportionally with income, "
-            "preventing lifestyle creep from consuming your entire raise."
+            "Your monthly loan payments (${total_monthly_payments}) represent {payment_burden}% of your income. "
+            "When loan payments exceed 30% of income, it can strain your budget and limit your ability to save. "
+            "Your total loan balance is ${total_balance} across {num_loans} loan account(s). "
+            "Consider creating a budget that prioritizes these payments while maintaining financial flexibility."
         ),
-        variables=["income_change", "savings_change_text", "savings_percent"]
+        variables=["total_monthly_payments", "payment_burden", "total_balance", "num_loans"]
     ),
     EducationTemplate(
-        template_id="p5_percentage_savings",
-        persona_id="persona5_lifestyle_inflator",
-        category="savings",
-        title="Percentage-Based Savings Goals",
+        template_id="p5_refinancing_opportunity",
+        persona_id="persona5_debt_burden",
+        category="debt_optimization",
+        title="Exploring Refinancing Options",
         content=(
-            "As your income grows, maintain a consistent savings percentage rather than a fixed "
-            "dollar amount. Aim to save {target_percent}% of your income. Your income increased "
-            "{income_change}%, so if you'd maintained your previous savings rate, you'd be saving "
-            "an additional ${additional_savings}/month. Adjust your savings automation to "
-            "match your new income level."
+            "Your {loan_type} has an interest rate of {interest_rate}%. "
+            "If current rates are lower, refinancing could reduce your monthly payment from ${current_payment} "
+            "to approximately ${potential_payment}, saving you ${monthly_savings}/month. "
+            "Research current refinancing rates and consider if refinancing makes sense for your situation. "
+            "Keep in mind that refinancing may extend your loan term, so weigh the monthly savings against "
+            "the total interest paid over the life of the loan."
         ),
-        variables=["target_percent", "income_change", "additional_savings"]
+        variables=["loan_type", "interest_rate", "current_payment", "potential_payment", "monthly_savings"]
     ),
     EducationTemplate(
-        template_id="p5_goal_visualization",
-        persona_id="persona5_lifestyle_inflator",
-        category="savings",
-        title="Visualizing Your Financial Goals",
+        template_id="p5_overdue_action_plan",
+        persona_id="persona5_debt_burden",
+        category="debt_management",
+        title="Addressing Overdue Loan Payments",
         content=(
-            "Create visual reminders of your financial goals to resist lifestyle inflation. "
-            "Track progress toward goals like: ${goal1_target}, ${goal2_target}, ${goal3_target}. "
-            "When considering a lifestyle upgrade, compare it to progress toward these goals. "
-            "Remember: temporary lifestyle upgrades often provide less long-term satisfaction "
-            "than achieving financial goals."
+            "You have an overdue payment on your {loan_type}. Immediate action is important to prevent "
+            "further damage to your credit score and potential collection actions. Contact your lender "
+            "immediately to discuss payment options. Many lenders offer hardship programs, payment plans, "
+            "or temporary deferment options. Your minimum payment is ${min_payment}, but any payment "
+            "toward the overdue amount will help get you back on track."
         ),
-        variables=["goal1_target", "goal2_target", "goal3_target"]
+        variables=["loan_type", "min_payment"]
     ),
     EducationTemplate(
-        template_id="p5_lifestyle_creep_awareness",
-        persona_id="persona5_lifestyle_inflator",
-        category="lifestyle_management",
-        title="Understanding Lifestyle Creep",
+        template_id="p5_income_driven_repayment",
+        persona_id="persona5_debt_burden",
+        category="student_loan_management",
+        title="Income-Driven Repayment Plans for Student Loans",
         content=(
-            "Lifestyle creep occurs when spending increases alongside income, preventing savings "
-            "from growing. Your income increased {income_change}% but savings {savings_change_text}. "
-            "To prevent creep, wait 30 days before making lifestyle upgrades, and ensure savings "
-            "increase proportionally with income. Consider: 'Would I buy this if my income hadn't "
-            "increased?' If not, it may be lifestyle creep."
+            "Your student loan payment of ${monthly_payment}/month may be straining your budget. "
+            "Income-driven repayment (IDR) plans can adjust your monthly payment based on your income "
+            "and family size, potentially reducing your payment to ${estimated_idr_payment}/month. "
+            "These plans can provide relief if your loan payments are high relative to your income. "
+            "Contact your loan servicer to learn more about IDR options and eligibility requirements."
         ),
-        variables=["income_change", "savings_change_text"]
+        variables=["monthly_payment", "estimated_idr_payment"]
+    ),
+    EducationTemplate(
+        template_id="p5_budget_prioritization",
+        persona_id="persona5_debt_burden",
+        category="budget",
+        title="Prioritizing Loan Payments in Your Budget",
+        content=(
+            "With loan payments totaling ${total_monthly_payments}/month ({payment_burden}% of income), "
+            "it's essential to prioritize these payments in your budget. Create a monthly budget that "
+            "accounts for your loan payments first, then allocate remaining funds to essentials and savings. "
+            "Consider using the 50/30/20 rule: 50% for needs (including loan payments), 30% for wants, "
+            "and 20% for savings and debt repayment beyond minimums."
+        ),
+        variables=["total_monthly_payments", "payment_burden"]
+    ),
+    EducationTemplate(
+        template_id="p5_loan_consolidation",
+        persona_id="persona5_debt_burden",
+        category="debt_optimization",
+        title="Loan Consolidation Considerations",
+        content=(
+            "You have multiple loan accounts totaling ${total_balance}. Consolidating your loans could "
+            "simplify your payments by combining them into a single monthly payment. However, consolidation "
+            "may not always reduce your interest rate or total cost. Research consolidation options carefully, "
+            "compare interest rates, and calculate whether consolidation would save you money over the life "
+            "of the loans. Consider factors like whether you'll lose any benefits (like student loan forgiveness "
+            "programs) before consolidating."
+        ),
+        variables=["total_balance"]
     ),
 ]
 
@@ -332,7 +361,7 @@ TEMPLATES_BY_PERSONA = {
     'persona2_variable_income': PERSONA2_TEMPLATES,
     'persona3_subscription_heavy': PERSONA3_TEMPLATES,
     'persona4_savings_builder': PERSONA4_TEMPLATES,
-    'persona5_lifestyle_inflator': PERSONA5_TEMPLATES,
+    'persona5_debt_burden': PERSONA5_TEMPLATES,
 }
 
 # All templates by ID for quick lookup

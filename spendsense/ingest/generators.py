@@ -125,11 +125,13 @@ class SyntheticUserGenerator:
 class SyntheticAccountGenerator:
     """Generate synthetic bank accounts for users."""
     
-    # Three main account types: checking, savings, credit_card
+    # Account types: checking, savings, credit_card, mortgage, student_loan
     ACCOUNT_TYPES = {
         "checking": {"weight": 1.0, "has_limit": False},  # Everyone has checking
         "savings": {"weight": 0.6, "has_limit": False},  # Savings accounts (includes subtypes)
         "credit_card": {"weight": 0.8, "has_limit": True},
+        "mortgage": {"weight": 0.4, "has_limit": False},  # 40% of users have mortgages
+        "student_loan": {"weight": 0.35, "has_limit": False},  # 35% of users have student loans
     }
     
     # Savings account subtypes (all have type="savings" for behavioral detection)
@@ -256,6 +258,20 @@ class SyntheticAccountGenerator:
             utilization = random.uniform(0, 0.9)  # 0-90% utilization
             balance = limit * utilization
             available = limit - balance
+            
+        elif account_type == "mortgage":
+            final_subtype = "mortgage"
+            # Typical mortgage balance: $100k - $500k
+            balance = random.uniform(100000, 500000)
+            available = None  # Mortgages don't have available balance
+            limit = None
+            
+        elif account_type == "student_loan":
+            final_subtype = "student_loan"
+            # Typical student loan balance: $10k - $100k
+            balance = random.uniform(10000, 100000)
+            available = None  # Student loans don't have available balance
+            limit = None
         
         else:
             # Unknown account type - use defaults
@@ -379,6 +395,26 @@ class SyntheticAccountGenerator:
             
             balance = limit * utilization
             available = limit - balance
+            
+        elif account_type == "mortgage":
+            final_subtype = subtype if subtype else "mortgage"
+            if balance_range:
+                balance = random.uniform(balance_range[0], balance_range[1])
+            else:
+                # Typical mortgage balance: $100k - $500k
+                balance = random.uniform(100000, 500000)
+            available = None  # Mortgages don't have available balance
+            limit = None
+            
+        elif account_type == "student_loan":
+            final_subtype = subtype if subtype else "student_loan"
+            if balance_range:
+                balance = random.uniform(balance_range[0], balance_range[1])
+            else:
+                # Typical student loan balance: $10k - $100k
+                balance = random.uniform(10000, 100000)
+            available = None  # Student loans don't have available balance
+            limit = None
         
         else:
             # Unknown account type - use defaults

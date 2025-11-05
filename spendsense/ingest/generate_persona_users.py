@@ -38,7 +38,7 @@ def create_user_for_persona(
     liability_gen: SyntheticLiabilityGenerator,
     multi_persona_overlay: Optional[str] = None,
     high_util_reason: Optional[str] = None,
-    lifestyle_inflator_reason: Optional[str] = None
+    debt_burden_reason: Optional[str] = None
 ):
     """
     Create a user with financial profile tailored to a specific persona.
@@ -80,7 +80,7 @@ def create_user_for_persona(
     accounts = _create_persona_profile_with_behaviors(
         user, persona_type, account_gen, transaction_gen, liability_gen, multi_persona_overlay,
         high_util_reason=high_util_reason if persona_type == "high_utilization" else None,
-        lifestyle_inflator_reason=lifestyle_inflator_reason if persona_type == "lifestyle_inflator" else None
+        debt_burden_reason=debt_burden_reason if persona_type == "debt_burden" else None
     )
     
     # Generate transactions and liabilities for all accounts
@@ -137,13 +137,11 @@ def create_user_for_persona(
                 pass
             # "utilization_50" is already handled by the balance check above
         
-        # For lifestyle inflator, generate income and savings based on reason
-        # AND ensure regular income (pay gaps ≤45 days) to avoid Persona 2
-        # AND limit subscriptions (<3 merchants or <$50/month) to avoid Persona 3
-        if persona_type == "lifestyle_inflator":
+        # For debt burden, generate loan accounts based on reason
+        if persona_type == "debt_burden":
             if account.type == "checking":
-                # Generate base transactions WITHOUT subscriptions first
-                # Then add income and limit subscriptions
+                # Generate regular income (biweekly or monthly) to avoid Persona 2
+                # Income needs to be sufficient to calculate loan payment burden
                 income_freq = random.choice(["biweekly", "monthly"])
                 transactions_list = transaction_gen.generate_transactions_for_account(
                     account.account_id,
@@ -151,25 +149,8 @@ def create_user_for_persona(
                     months=6,  # Use 6 months for 180-day window
                     income_frequency=income_freq if account.type == "checking" else None
                 )
-                # Remove ALL subscription-like transactions before adding income
+                # Remove ALL subscription-like transactions to avoid Persona 3
                 transactions_list = _remove_all_subscriptions(account.account_id, transactions_list)
-                
-                # Add income based on reason
-                if lifestyle_inflator_reason == "income_increasing":
-                    # Condition 1: Income increasing ≥15%, savings rate flat
-                    transactions_list = _ensure_lifestyle_inflator_income(
-                        account.account_id, transactions_list
-                    )
-                elif lifestyle_inflator_reason == "income_flat":
-                    # Condition 2: Income flat (±5%), savings rate decreasing
-                    transactions_list = _ensure_flat_income_with_decreasing_savings(
-                        account.account_id, transactions_list
-                    )
-                else:
-                    # Default: income increasing
-                    transactions_list = _ensure_lifestyle_inflator_income(
-                        account.account_id, transactions_list
-                    )
                 
                 # Ensure regular income (not variable) - pay gaps ≤45 days
                 transactions_list = _ensure_regular_income_pattern(
@@ -179,23 +160,6 @@ def create_user_for_persona(
                 transactions_list = _limit_subscriptions_for_persona5(
                     account.account_id, transactions_list
                 )
-            elif account.type == "savings":
-                # Ensure savings rate based on reason
-                if lifestyle_inflator_reason == "income_increasing":
-                    # Condition 1: Savings rate stays flat (±2%)
-                    transactions_list = _ensure_flat_savings_rate(
-                        account.account_id, transactions_list, account.balance_current
-                    )
-                elif lifestyle_inflator_reason == "income_flat":
-                    # Condition 2: Savings rate decreases (< 0%)
-                    transactions_list = _ensure_decreasing_savings_rate(
-                        account.account_id, transactions_list, account.balance_current
-                    )
-                else:
-                    # Default: flat savings rate
-                    transactions_list = _ensure_flat_savings_rate(
-                        account.account_id, transactions_list, account.balance_current
-                    )
         
         # Generate liability if credit card, mortgage, or student loan with balance
         # Do this BEFORE adding transactions so we can use liability data for minimum payment transactions
@@ -220,6 +184,32 @@ def create_user_for_persona(
                     elif high_util_reason == "is_overdue":
                         # Set overdue flag
                         liability_data['is_overdue'] = True
+                
+                # For debt burden persona, ensure loan payments meet criteria
+                if (persona_type == "debt_burden" or multi_persona_overlay == "debt_burden") and account.type in ["mortgage", "student_loan"]:
+                    # Calculate monthly income from checking account transactions
+                    checking_account = next((a for a in accounts if a.type == "checking"), None)
+                    if checking_account:
+                        # Estimate monthly income from transactions (will be calculated properly later)
+                        # For now, set loan payment to be ≥30% of a reasonable income range
+                        # Or set overdue if reason is "overdue"
+                        if debt_burden_reason == "overdue":
+                            liability_data['is_overdue'] = True
+                        else:
+                            # Ensure minimum payment is high enough to meet burden criteria
+                            # Typical income range: $40k-$80k annually = $3.3k-$6.7k monthly
+                            # 30% of $3.3k = $990/month, 30% of $6.7k = $2,010/month
+                            # So set minimum payment to $1,000-$2,500/month range
+                            if account.type == "mortgage":
+                                # Mortgage payments typically $1,000-$3,000/month
+                                liability_data['minimum_payment_amount'] = random.uniform(1000, 3000)
+                            elif account.type == "student_loan":
+                                # Student loan payments typically $200-$800/month
+                                # But we need higher to meet burden - set to $1,000-$2,500
+                                liability_data['minimum_payment_amount'] = random.uniform(1000, 2500)
+                            
+                            # Ensure last payment matches minimum (user making minimum payments)
+                            liability_data['last_payment_amount'] = liability_data['minimum_payment_amount']
         
         # Sort transactions by date
         transactions_list.sort(key=lambda x: x["date"])
@@ -270,7 +260,7 @@ def _create_persona_profile_with_behaviors(
     liability_gen: SyntheticLiabilityGenerator,
     multi_persona_overlay: Optional[str] = None,
     high_util_reason: Optional[str] = None,
-    lifestyle_inflator_reason: Optional[str] = None
+    debt_burden_reason: Optional[str] = None
 ):
     """
     Create accounts with multiple behaviors to ensure ≥3 behaviors per user.
@@ -293,8 +283,8 @@ def _create_persona_profile_with_behaviors(
         accounts = _create_subscription_heavy_profile(user, account_gen, transaction_gen, liability_gen)
     elif persona_type == "savings_builder":
         accounts = _create_savings_builder_profile(user, account_gen, transaction_gen, liability_gen)
-    elif persona_type == "lifestyle_inflator":
-        accounts = _create_lifestyle_inflator_profile(user, account_gen, transaction_gen, liability_gen, lifestyle_inflator_reason)
+    elif persona_type == "debt_burden":
+        accounts = _create_debt_burden_profile(user, account_gen, transaction_gen, liability_gen, debt_burden_reason)
     else:
         # Fallback: Standard profile
         account_list = account_gen.generate_accounts_for_user(user.user_id, user.credit_score)
@@ -355,6 +345,32 @@ def _create_persona_profile_with_behaviors(
                     account_id_suffix="savings"
                 )
                 accounts.append(Account(**savings_data))
+        
+        elif multi_persona_overlay == "debt_burden":
+            # Add mortgage or student loan account
+            has_mortgage = any(a.type == "mortgage" for a in accounts)
+            has_student_loan = any(a.type == "student_loan" for a in accounts)
+            
+            if not has_mortgage and not has_student_loan:
+                # Add mortgage (more common)
+                if random.random() < 0.7:
+                    mortgage_data = account_gen.create_account_custom(
+                        user_id=user.user_id,
+                        account_type="mortgage",
+                        counter=len(accounts),
+                        balance_range=(100000, 500000),
+                        account_id_suffix="mortgage"
+                    )
+                    accounts.append(Account(**mortgage_data))
+                else:
+                    student_loan_data = account_gen.create_account_custom(
+                        user_id=user.user_id,
+                        account_type="student_loan",
+                        counter=len(accounts),
+                        balance_range=(10000, 100000),
+                        account_id_suffix="student"
+                    )
+                    accounts.append(Account(**student_loan_data))
         
         elif multi_persona_overlay == "lifestyle_inflator":
             # Ensure savings account exists (will be flat in transactions)
@@ -602,6 +618,109 @@ def _create_savings_builder_profile(user, account_gen, transaction_gen, liabilit
             account_id_suffix="002"
         )
         accounts.append(Account(**credit_card_data))
+    
+    return accounts
+
+
+def _create_debt_burden_profile(user, account_gen, transaction_gen, liability_gen, debt_burden_reason: Optional[str] = None):
+    """Create accounts for Debt Burden persona.
+    
+    Behaviors ensured:
+    1. Loan Accounts (mortgage OR student loan - primary)
+    2. Loan Payment Burden (≥30% of income OR overdue)
+    3. Credit Utilization (low <50% to avoid Persona 1)
+    
+    CRITICAL: Persona 5 criteria:
+    - Has mortgage account OR student loan account AND
+    - (Total monthly loan payments ≥ 30% of monthly income) OR
+    - (Any loan is overdue)
+    
+    Args:
+        debt_burden_reason: One of "mortgage", "student_loan", "both", "overdue"
+                         If None, defaults to "mortgage"
+    
+    To avoid matching higher priority personas:
+    - Credit utilization <50% (avoids Persona 1)
+    - Regular income with pay gaps ≤45 days (avoids Persona 2)
+    - Cash flow buffer ≥1 month (avoids Persona 2)
+    - Subscriptions <3 merchants OR low subscription spend (avoids Persona 3)
+    """
+    accounts = []
+    
+    # Checking account with GOOD buffer (≥1 month) to avoid Persona 2
+    monthly_expenses = random.uniform(3000, 6000)
+    buffer_multiplier = random.uniform(1.2, 2.5)  # 1.2-2.5 months buffer
+    checking_balance = monthly_expenses * buffer_multiplier
+    
+    checking_data = account_gen.create_account_custom(
+        user_id=user.user_id,
+        account_type="checking",
+        counter=0,
+        balance_range=(checking_balance * 0.95, checking_balance * 1.05),
+        account_id_suffix="000"
+    )
+    accounts.append(Account(**checking_data))
+    
+    # Optional savings account (small)
+    if random.random() < 0.5:
+        savings_data = account_gen.create_account_custom(
+            user_id=user.user_id,
+            account_type="savings",
+            counter=1,
+            balance_range=(1000, 5000),
+            account_id_suffix="001"
+        )
+        accounts.append(Account(**savings_data))
+    
+    # Credit card with LOW utilization (<50% to avoid Persona 1)
+    if random.random() < 0.6:
+        credit_limit = random.uniform(5000, 20000)
+        credit_card_data = account_gen.create_account_custom(
+            user_id=user.user_id,
+            account_type="credit_card",
+            counter=2,
+            credit_limit=credit_limit,
+            utilization_range=(0.05, 0.45),  # Below 50% threshold
+            account_id_suffix="002"
+        )
+        accounts.append(Account(**credit_card_data))
+    
+    # Loan accounts based on reason
+    reason = debt_burden_reason or "mortgage"
+    
+    if reason == "mortgage" or reason == "both":
+        # Mortgage account
+        mortgage_data = account_gen.create_account_custom(
+            user_id=user.user_id,
+            account_type="mortgage",
+            counter=len(accounts),
+            balance_range=(100000, 500000),  # $100k-$500k mortgage
+            account_id_suffix="mortgage"
+        )
+        accounts.append(Account(**mortgage_data))
+    
+    if reason == "student_loan" or reason == "both":
+        # Student loan account
+        student_loan_data = account_gen.create_account_custom(
+            user_id=user.user_id,
+            account_type="student_loan",
+            counter=len(accounts),
+            balance_range=(10000, 100000),  # $10k-$100k student loan
+            account_id_suffix="student"
+        )
+        accounts.append(Account(**student_loan_data))
+    
+    # If reason is "overdue", the overdue status will be set in liability generation
+    if reason == "overdue":
+        # Default to mortgage if none specified
+        mortgage_data = account_gen.create_account_custom(
+            user_id=user.user_id,
+            account_type="mortgage",
+            counter=len(accounts),
+            balance_range=(100000, 500000),
+            account_id_suffix="mortgage"
+        )
+        accounts.append(Account(**mortgage_data))
     
     return accounts
 
@@ -1365,7 +1484,7 @@ def generate_persona_distributed_users(num_users: int = 100):
         "variable_income",
         "subscription_heavy",
         "savings_builder",
-        "lifestyle_inflator"
+        "debt_burden"
     ]
     
     # Multi-persona combinations for priority testing
@@ -1373,8 +1492,8 @@ def generate_persona_distributed_users(num_users: int = 100):
         "high_utilization": "subscription_heavy",      # High Util + Subscriptions → Should get High Util (priority 1)
         "variable_income": "subscription_heavy",        # Variable Income + Subscriptions → Should get Variable Income (priority 2)
         "subscription_heavy": "savings_builder",       # Subscriptions + Savings → Should get Subscriptions (priority 3)
-        "savings_builder": "lifestyle_inflator",       # Savings + Lifestyle → Should get Lifestyle (priority 4)
-        "lifestyle_inflator": "high_utilization",      # Lifestyle + High Util → Should get High Util (priority 1)
+        "savings_builder": "debt_burden",              # Savings + Debt → Should get Savings (priority 4)
+        "debt_burden": "high_utilization",             # Debt + High Util → Should get High Util (priority 1)
     }
     
     user_number = 1
@@ -1382,8 +1501,8 @@ def generate_persona_distributed_users(num_users: int = 100):
     # High utilization reasons for distribution
     high_util_reasons = ["utilization_50", "interest_charges", "minimum_payment_only", "is_overdue"]
     
-    # Lifestyle inflator reasons for distribution
-    lifestyle_inflator_reasons = ["income_increasing", "income_flat"]
+    # Debt burden reasons for distribution
+    debt_burden_reasons = ["mortgage", "student_loan", "both", "overdue"]
     
     # Generate 15 pure persona users + 5 multi-persona users per persona
     for persona in personas:
@@ -1419,18 +1538,18 @@ def generate_persona_distributed_users(num_users: int = 100):
                 multi_persona_overlay=None
             )
             user_number += 1
-        elif persona == "lifestyle_inflator":
-            # First 12 users: pure persona with consent, distributed across 2 reasons (6 per reason)
+        elif persona == "debt_burden":
+            # First 12 users: pure persona with consent, distributed across 4 reasons (3 per reason)
             reason_index = 0
             for i in range(12):
-                reason = lifestyle_inflator_reasons[reason_index % len(lifestyle_inflator_reasons)]
+                reason = debt_burden_reasons[reason_index % len(debt_burden_reasons)]
                 print(f"  [{user_number}/{num_users}] {persona} (pure, consent, reason: {reason})...", end="\r")
                 create_user_for_persona(
                     session, user_number, persona, should_consent=True,
                     user_gen=user_gen, account_gen=account_gen,
                     transaction_gen=transaction_gen, liability_gen=liability_gen,
                     multi_persona_overlay=None,
-                    lifestyle_inflator_reason=reason
+                    debt_burden_reason=reason
                 )
                 user_number += 1
                 reason_index += 1

@@ -17,7 +17,7 @@ from .subscriptions import detect_subscriptions, SubscriptionSignals
 from .savings import calculate_savings_behavior, SavingsSignals, SAVINGS_ACCOUNT_TYPES
 from .credit import calculate_credit_utilization, CreditSignals
 from .income import calculate_income_stability, IncomeSignals
-from .lifestyle import detect_lifestyle_inflation, LifestyleSignals
+from .loans import calculate_loan_signals, LoanSignals
 
 
 @dataclass
@@ -36,7 +36,8 @@ class SignalSet:
     savings: SavingsSignals
     credit: CreditSignals
     income: IncomeSignals
-    lifestyle: Optional[LifestyleSignals]  # Only for 180d window
+    loans: LoanSignals
+    lifestyle: Optional[dict] = None  # Deprecated - kept for backward compatibility
     
     def to_dict(self) -> dict:
         """Convert to dictionary for storage."""
@@ -48,6 +49,7 @@ class SignalSet:
             'savings': self.savings.to_dict(),
             'credit': self.credit.to_dict(),
             'income': self.income.to_dict(),
+            'loans': self.loans.to_dict(),
             'lifestyle': self.lifestyle.to_dict() if self.lifestyle else None
         }
     
@@ -130,12 +132,14 @@ def calculate_signals(
             ).all()
             all_transactions.extend(txns)
         
-        # Fetch liabilities
+        # Fetch liabilities for credit cards and loans
         credit_account_ids = [a.account_id for a in accounts if a.type == 'credit_card']
+        loan_account_ids = [a.account_id for a in accounts if a.type in ['mortgage', 'student_loan']]
+        all_account_ids_for_liabilities = credit_account_ids + loan_account_ids
         liabilities = []
-        if credit_account_ids:
+        if all_account_ids_for_liabilities:
             liabilities = session.query(Liability).filter(
-                Liability.account_id.in_(credit_account_ids)
+                Liability.account_id.in_(all_account_ids_for_liabilities)
             ).all()
         
         # Calculate signals for 30-day window
@@ -235,27 +239,20 @@ def _calculate_signals_for_window(
         window_days=window_days
     )
     
-    # Calculate lifestyle signals
-    # For 30-day window, use 90-day lookback (similar to subscriptions)
-    # For 180-day window, use the full window
-    if window_days == 30:
-        # Use 90-day lookback for lifestyle signals when calculating 30-day window
-        lookback_transactions = filter_transactions_by_window(all_transactions, 90)
-        lookback_savings = [t for t in lookback_transactions if t.account_id in savings_account_ids]
-        lifestyle_signals = detect_lifestyle_inflation(
-            transactions_180d=lookback_transactions,
-            savings_transactions_180d=lookback_savings,
-            window_days=90  # Use 90-day period for calculation
-        )
-    elif window_days >= 180:
-        # Use full 180-day window for lifestyle signals
-        lifestyle_signals = detect_lifestyle_inflation(
-            transactions_180d=window_transactions,
-            savings_transactions_180d=savings_transactions,
-            window_days=window_days
-        )
-    else:
-        lifestyle_signals = None
+    # Calculate loan signals
+    # Filter liabilities to only loan-related ones
+    loan_liabilities = [liab for liab in liabilities if liab.type in ['mortgage', 'student_loan']]
+    # Calculate monthly income from income signals for debt-to-income ratio
+    monthly_income = 0.0
+    if income_signals.payroll_detected and income_signals.total_income > 0:
+        # Normalize income to monthly
+        monthly_income = (income_signals.total_income / window_days) * 30
+    
+    loan_signals = calculate_loan_signals(
+        accounts=accounts,
+        liabilities=loan_liabilities,
+        monthly_income=monthly_income
+    )
     
     return SignalSet(
         user_id=user_id,
@@ -265,7 +262,8 @@ def _calculate_signals_for_window(
         savings=savings_signals,
         credit=credit_signals,
         income=income_signals,
-        lifestyle=lifestyle_signals
+        loans=loan_signals,
+        lifestyle=None  # Deprecated - no longer calculated
     )
 
 

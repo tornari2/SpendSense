@@ -138,19 +138,31 @@ body {
     font-weight: bold;
 }
 
+/* Utilization flags should NOT be bold by default - be very explicit */
+.signal-card .badge {
+    font-weight: normal !important;
+}
+
+/* Only the utilization-flag-bold class should be bold */
+.signal-card .badge.utilization-flag-bold {
+    font-weight: bold !important;
+}
+
 .badge-success {
     background-color: #27ae60;
     color: white;
 }
 
-.badge-error {
-    background-color: #e74c3c;
-    color: #7f8c8d;
-}
-
 .badge-warning {
     background-color: #f39c12;
-    color: #7f8c8d;
+    color: white;
+    font-weight: normal !important;
+}
+
+.badge-error {
+    background-color: #e74c3c;
+    color: white;
+    font-weight: normal !important;
 }
 
 .badge-primary {
@@ -190,8 +202,9 @@ body {
 
 .badge-inactive {
     background-color: #ecf0f1;
-    color: #95a5a6;
-    opacity: 0.6;
+    color: #bdc3c7 !important;
+    opacity: 0.8;
+    font-weight: normal !important;
 }
 
 .badge-secondary {
@@ -316,18 +329,22 @@ tr.primary-persona {
     padding: 0.25rem 0;
 }
 
-/* Utilization colors */
+/* Utilization colors - removed, no longer used for Max Utilization value */
 .utilization-low {
     color: #27ae60;
+    font-weight: normal !important;
 }
 
 .utilization-medium {
     color: #f39c12;
+    font-weight: normal !important;
 }
 
 .utilization-high {
     color: #e74c3c;
+    font-weight: normal !important;
 }
+
 
 /* Recommendations */
 .recommendation-card,
