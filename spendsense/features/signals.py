@@ -233,10 +233,12 @@ def _calculate_signals_for_window(
     )
     
     # Calculate income signals
+    # Pass all_transactions for pay gap lookback (90-day for 30d window, full window for 180d)
     income_signals = calculate_income_stability(
         checking_accounts=checking_accounts,
-        all_transactions=window_transactions,
-        window_days=window_days
+        all_transactions=window_transactions,  # Window transactions for buffer
+        window_days=window_days,
+        all_transactions_for_lookback=all_transactions  # All transactions for pay gap lookback
     )
     
     # Calculate loan signals
@@ -251,7 +253,8 @@ def _calculate_signals_for_window(
     loan_signals = calculate_loan_signals(
         accounts=accounts,
         liabilities=loan_liabilities,
-        monthly_income=monthly_income
+        monthly_income=monthly_income,
+        transactions=all_transactions  # Pass transactions for last payment date extraction
     )
     
     return SignalSet(

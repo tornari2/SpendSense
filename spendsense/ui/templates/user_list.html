@@ -14,6 +14,16 @@
             </div>
             
             <div class="form-group">
+                <label for="persona_filter">Persona:</label>
+                <select id="persona_filter" name="persona_filter">
+                    <option value="">All</option>
+                    {% for persona_id, persona_name in persona_names.items() %}
+                    <option value="{{ persona_id }}" {% if persona_filter == persona_id %}selected{% endif %}>{{ persona_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
                 <label for="consent_filter">Consent:</label>
                 <select id="consent_filter" name="consent_filter">
                     <option value="all" {% if consent_filter == "all" %}selected{% endif %}>All</option>

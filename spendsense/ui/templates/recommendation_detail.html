@@ -36,26 +36,46 @@
         <div class="decision-trace-section">
             <h3>⭐ Decision Trace (Why this recommendation was made)</h3>
             <div class="trace-content">
-                <h4>Input Signals Used:</h4>
-                <pre>{{ trace.input_signals|tojson }}</pre>
+                <h4>User:</h4>
+                <p><strong>User ID:</strong> <a href="/users/{{ recommendation.user_id }}">{{ recommendation.user_id }}</a></p>
                 
                 <h4>Persona Assignment:</h4>
-                <p><strong>Persona:</strong> {{ trace.persona_assigned }}</p>
-                <p><strong>Reasoning:</strong> {{ trace.persona_reasoning }}</p>
+                <p><strong>Persona:</strong> {{ trace.persona_assigned or "N/A" }}</p>
+                <p><strong>Reasoning:</strong> {{ trace.persona_reasoning or "N/A" }}</p>
                 
+                {% if trace.input_signals and trace.input_signals.persona_signals %}
+                <h4>Signals That Triggered This Recommendation:</h4>
+                <pre>{{ trace.input_signals.persona_signals|tojson }}</pre>
+                {% elif trace.input_signals %}
+                <h4>Signals That Triggered This Recommendation:</h4>
+                <pre>{{ trace.input_signals|tojson }}</pre>
+                {% endif %}
+                
+                {% if trace.template_used %}
                 <h4>Template Used:</h4>
                 <p>{{ trace.template_used }}</p>
+                {% endif %}
                 
+                {% if trace.offer_id %}
+                <h4>Offer ID:</h4>
+                <p>{{ trace.offer_id }}</p>
+                {% endif %}
+                
+                {% if trace.variables_inserted and trace.variables_inserted|length > 0 %}
                 <h4>Variables Inserted:</h4>
                 <pre>{{ trace.variables_inserted|tojson }}</pre>
+                {% endif %}
                 
+                {% if trace.eligibility_checks %}
                 <h4>Eligibility Checks:</h4>
                 <pre>{{ trace.eligibility_checks|tojson }}</pre>
-                
-                <h4>Metadata:</h4>
-                <p><strong>Timestamp:</strong> {{ trace.timestamp }}</p>
-                <p><strong>Version:</strong> {{ trace.version }}</p>
+                {% endif %}
             </div>
+        </div>
+        {% else %}
+        <div class="decision-trace-section">
+            <h3>⭐ Decision Trace</h3>
+            <p class="text-muted">No decision trace available for this recommendation.</p>
         </div>
         {% endif %}
         

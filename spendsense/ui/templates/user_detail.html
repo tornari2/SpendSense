@@ -93,10 +93,10 @@
                     </ul>
                 </div>
                 
-                {% if user_detail.signals_30d.loans.has_mortgage or user_detail.signals_30d.loans.has_student_loan %}
                 <div class="signal-card">
                     <h5>Loans</h5>
                     <ul>
+                        {% if user_detail.signals_30d.loans.has_mortgage or user_detail.signals_30d.loans.has_student_loan %}
                         <li>Total Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.total_loan_balance) }}</strong></li>
                         <li>Monthly Loan Payments: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.total_monthly_loan_payments) }}</strong></li>
                         {% if user_detail.signals_30d.loans.loan_payment_burden_percent > 0 %}
@@ -111,9 +111,11 @@
                         {% if user_detail.signals_30d.loans.any_loan_overdue %}
                         <li>Status: <span class="badge badge-error">Overdue</span></li>
                         {% endif %}
+                        {% else %}
+                        <li>No loans detected</li>
+                        {% endif %}
                     </ul>
                 </div>
-                {% endif %}
             </div>
         </div>
         
@@ -170,10 +172,10 @@
                     </ul>
                 </div>
                 
-                {% if user_detail.signals_180d.loans.has_mortgage or user_detail.signals_180d.loans.has_student_loan %}
                 <div class="signal-card">
                     <h5>Loans</h5>
                     <ul>
+                        {% if user_detail.signals_180d.loans.has_mortgage or user_detail.signals_180d.loans.has_student_loan %}
                         <li>Total Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.total_loan_balance) }}</strong></li>
                         <li>Monthly Loan Payments: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.total_monthly_loan_payments) }}</strong></li>
                         {% if user_detail.signals_180d.loans.loan_payment_burden_percent > 0 %}
@@ -188,9 +190,11 @@
                         {% if user_detail.signals_180d.loans.any_loan_overdue %}
                         <li>Status: <span class="badge badge-error">Overdue</span></li>
                         {% endif %}
+                        {% else %}
+                        <li>No loans detected</li>
+                        {% endif %}
                     </ul>
                 </div>
-                {% endif %}
             </div>
         </div>
     </section>
@@ -222,10 +226,15 @@
                             <td><span class="badge badge-persona">{{ ph.persona }}</span></td>
                             <td>{{ ph.assigned_at[:19] }}</td>
                             <td>
-                                <details>
-                                    <summary>View Signals</summary>
-                                    <pre>{{ ph.signals|tojson }}</pre>
-                                </details>
+                                {% if ph.signals_formatted %}
+                                    <ul class="signals-list">
+                                        {% for signal in ph.signals_formatted %}
+                                        <li>{{ signal }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                {% else %}
+                                    <span class="text-muted">No signals available</span>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -505,25 +514,37 @@
                     <details class="decision-trace">
                         <summary><strong>⭐ Decision Trace (Why this recommendation was made)</strong></summary>
                         <div class="trace-content">
-                            <h6>Input Signals Used:</h6>
-                            <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
-                            
                             <h6>Persona Assignment:</h6>
                             <p><strong>Persona:</strong> {{ rec.decision_trace.persona_assigned }}</p>
                             <p><strong>Reasoning:</strong> {{ rec.decision_trace.persona_reasoning }}</p>
                             
+                            {% if rec.decision_trace.input_signals and rec.decision_trace.input_signals.persona_signals %}
+                            <h6>Signals That Triggered This Recommendation:</h6>
+                            <pre>{{ rec.decision_trace.input_signals.persona_signals|tojson }}</pre>
+                            {% elif rec.decision_trace.input_signals %}
+                            <h6>Signals That Triggered This Recommendation:</h6>
+                            <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
+                            {% endif %}
+                            
+                            {% if rec.decision_trace.template_used %}
                             <h6>Template Used:</h6>
                             <p>{{ rec.decision_trace.template_used }}</p>
+                            {% endif %}
                             
+                            {% if rec.decision_trace.offer_id %}
+                            <h6>Offer ID:</h6>
+                            <p>{{ rec.decision_trace.offer_id }}</p>
+                            {% endif %}
+                            
+                            {% if rec.decision_trace.variables_inserted %}
                             <h6>Variables Inserted:</h6>
                             <pre>{{ rec.decision_trace.variables_inserted|tojson }}</pre>
+                            {% endif %}
                             
+                            {% if rec.decision_trace.eligibility_checks %}
                             <h6>Eligibility Checks:</h6>
                             <pre>{{ rec.decision_trace.eligibility_checks|tojson }}</pre>
-                            
-                            <h6>Metadata:</h6>
-                            <p><strong>Timestamp:</strong> {{ rec.decision_trace.timestamp }}</p>
-                            <p><strong>Version:</strong> {{ rec.decision_trace.version }}</p>
+                            {% endif %}
                         </div>
                     </details>
                     {% endif %}

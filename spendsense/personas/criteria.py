@@ -71,12 +71,13 @@ def check_persona2_variable_income(signals: SignalSet, signals_180d: SignalSet =
     - Median pay gap > 45 days AND
     - Cash-flow buffer < 1 month
     
-    Note: Pay gap calculation uses 180-day window signals if available,
-    since gaps >45 days require historical context beyond a 30-day window.
+    Note: Pay gap uses 90-day lookback internally (for 30d window) or full window 
+    (for 180d window) to detect gaps >45 days. Cash-flow buffer uses window-specific 
+    transactions. Both metrics come from the window-specific signals.
     
     Args:
         signals: SignalSet for 30-day or 180-day window
-        signals_180d: Optional SignalSet for 180-day window (used for pay gap if provided)
+        signals_180d: Optional SignalSet for 180-day window (deprecated, kept for compatibility)
     
     Returns:
         Tuple of (matches, reasoning, signals_used)
@@ -90,15 +91,10 @@ def check_persona2_variable_income(signals: SignalSet, signals_180d: SignalSet =
         reasoning = "Does not match Variable Income Budgeter: No income detected"
         return matches, reasoning, signals_used
     
-    # Use 180-day window signals for pay gap if available (can detect gaps >45 days)
-    # Use window-specific signals for buffer (30d for 30d window, 180d for 180d window)
-    if signals_180d and signals_180d.income.payroll_detected:
-        pay_gap = signals_180d.income.median_pay_gap_days
-        # Use buffer from the window being evaluated
-        buffer = income.cash_flow_buffer_months
-    else:
-        pay_gap = income.median_pay_gap_days
-        buffer = income.cash_flow_buffer_months
+    # Both metrics come from the window-specific signals
+    # Pay gap already has appropriate lookback baked in (90d for 30d window, full window for 180d)
+    pay_gap = income.median_pay_gap_days
+    buffer = income.cash_flow_buffer_months
     
     # Check median pay gap > 45 days
     pay_gap_high = pay_gap > 45
@@ -254,11 +250,18 @@ def check_persona5_debt_burden(signals: SignalSet) -> Tuple[bool, str, Dict]:
     """
     Check if user matches Persona 5: Debt Burden
     
-    Criteria:
-    - Has mortgage account OR student loan account AND
-    - (Total monthly loan payments ≥ 30% of monthly income) OR
-    - (Any loan is overdue) OR
-    - (Making minimum payments only on loans - detected via last_payment_amount == minimum_payment_amount)
+    Criteria (separate thresholds for mortgages vs student loans):
+    
+    MORTGAGE (if has mortgage):
+    - Balance-to-income ratio ≥ 4.0 (very high mortgage debt relative to income) OR
+    - Monthly payment burden ≥ 35% of income
+    
+    STUDENT LOAN (if has student loan):
+    - Balance-to-income ratio ≥ 1.5 (student loan debt ≥ 1.5x annual income) OR
+    - Monthly payment burden ≥ 25% of income
+    
+    Note: If user has no income (income = 0), having any mortgage or student loan
+    qualifies as debt burden since any debt without income is a burden.
     
     Args:
         signals: SignalSet for 30-day or 180-day window
@@ -267,6 +270,7 @@ def check_persona5_debt_burden(signals: SignalSet) -> Tuple[bool, str, Dict]:
         Tuple of (matches, reasoning, signals_used)
     """
     loans = signals.loans
+    income = signals.income
     matches = False
     reasons = []
     signals_used = {}
@@ -276,47 +280,121 @@ def check_persona5_debt_burden(signals: SignalSet) -> Tuple[bool, str, Dict]:
         reasoning = "Does not match Debt Burden: No mortgage or student loan accounts"
         return matches, reasoning, signals_used
     
-    # Check if any loan is overdue
-    if loans.any_loan_overdue:
-        matches = True
-        if loans.mortgage_is_overdue:
-            reasons.append("mortgage overdue")
-        if loans.student_loan_is_overdue:
-            reasons.append("student loan overdue")
-        signals_used['any_loan_overdue'] = True
-        signals_used['mortgage_is_overdue'] = loans.mortgage_is_overdue
-        signals_used['student_loan_is_overdue'] = loans.student_loan_is_overdue
+    # Check if income is available
+    monthly_income = 0.0
+    annual_income = 0.0
+    if income.payroll_detected and income.total_income > 0:
+        monthly_income = (income.total_income / signals.window_days) * 30
+        annual_income = monthly_income * 12
     
-    # Check if loan payments are ≥ 30% of income
-    if loans.loan_payment_burden_percent >= 30.0:
-        matches = True
-        reasons.append(f"loan payments represent {loans.loan_payment_burden_percent:.1f}% of income")
-        signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
-        signals_used['total_monthly_loan_payments'] = loans.total_monthly_loan_payments
+    # Mortgage-specific thresholds
+    MORTGAGE_BALANCE_TO_INCOME_THRESHOLD = 4.0  # Mortgage balance ≥ 4x annual income
+    MORTGAGE_PAYMENT_BURDEN_THRESHOLD = 35.0  # Mortgage payments ≥ 35% of monthly income
     
-    # Check for minimum payment only behavior (simplified - check if last payment equals minimum)
-    # This would need to be enhanced with transaction analysis, but for now we'll use overdue as proxy
-    # or high debt-to-income ratio
+    # Student loan-specific thresholds
+    STUDENT_LOAN_BALANCE_TO_INCOME_THRESHOLD = 1.5  # Student loan balance ≥ 1.5x annual income
+    STUDENT_LOAN_PAYMENT_BURDEN_THRESHOLD = 25.0  # Student loan payments ≥ 25% of monthly income
+    
+    # Check mortgage criteria
+    mortgage_matches = False
+    mortgage_reasons = []
+    
+    if loans.has_mortgage and loans.mortgage_balance > 0:
+        if annual_income > 0:
+            mortgage_balance_to_income = loans.mortgage_balance / annual_income
+            mortgage_payment_burden = (loans.mortgage_monthly_payment / monthly_income * 100) if monthly_income > 0 else 0.0
+            
+            if mortgage_balance_to_income >= MORTGAGE_BALANCE_TO_INCOME_THRESHOLD:
+                mortgage_matches = True
+                mortgage_reasons.append(f"mortgage balance-to-income ratio {mortgage_balance_to_income:.2f} ≥ {MORTGAGE_BALANCE_TO_INCOME_THRESHOLD}")
+            elif mortgage_payment_burden >= MORTGAGE_PAYMENT_BURDEN_THRESHOLD:
+                mortgage_matches = True
+                mortgage_reasons.append(f"mortgage payments {mortgage_payment_burden:.1f}% of income ≥ {MORTGAGE_PAYMENT_BURDEN_THRESHOLD}%")
+        else:
+            # No income - any mortgage debt is a burden
+            mortgage_matches = True
+            mortgage_reasons.append(f"mortgage balance ${loans.mortgage_balance:,.2f} with no income")
+    
+    # Check student loan criteria
+    student_loan_matches = False
+    student_loan_reasons = []
+    
+    if loans.has_student_loan and loans.student_loan_balance > 0:
+        if annual_income > 0:
+            student_loan_balance_to_income = loans.student_loan_balance / annual_income
+            student_loan_payment_burden = (loans.student_loan_monthly_payment / monthly_income * 100) if monthly_income > 0 else 0.0
+            
+            if student_loan_balance_to_income >= STUDENT_LOAN_BALANCE_TO_INCOME_THRESHOLD:
+                student_loan_matches = True
+                student_loan_reasons.append(f"student loan balance-to-income ratio {student_loan_balance_to_income:.2f} ≥ {STUDENT_LOAN_BALANCE_TO_INCOME_THRESHOLD}")
+            elif student_loan_payment_burden >= STUDENT_LOAN_PAYMENT_BURDEN_THRESHOLD:
+                student_loan_matches = True
+                student_loan_reasons.append(f"student loan payments {student_loan_payment_burden:.1f}% of income ≥ {STUDENT_LOAN_PAYMENT_BURDEN_THRESHOLD}%")
+        else:
+            # No income - any student loan debt is a burden
+            student_loan_matches = True
+            student_loan_reasons.append(f"student loan balance ${loans.student_loan_balance:,.2f} with no income")
+    
+    # Match if either mortgage or student loan matches
+    matches = mortgage_matches or student_loan_matches
+    reasons.extend(mortgage_reasons)
+    reasons.extend(student_loan_reasons)
     
     if matches:
-        loan_details = []
-        if loans.has_mortgage:
-            loan_details.append(f"mortgage ${loans.mortgage_balance:,.2f}")
-        if loans.has_student_loan:
-            loan_details.append(f"student loan ${loans.student_loan_balance:,.2f}")
-        
         reasoning = f"Debt Burden: {', '.join(reasons)}"
-        if loan_details:
-            reasoning += f" (Total loan balance: ${loans.total_loan_balance:,.2f})"
         signals_used['total_loan_balance'] = loans.total_loan_balance
+        signals_used['average_interest_rate'] = loans.average_interest_rate
         signals_used['has_mortgage'] = loans.has_mortgage
         signals_used['has_student_loan'] = loans.has_student_loan
+        
+        # Include mortgage-specific signals
+        if loans.has_mortgage:
+            signals_used['mortgage_balance'] = loans.mortgage_balance
+            signals_used['mortgage_interest_rate'] = loans.mortgage_interest_rate
+            signals_used['mortgage_monthly_payment'] = loans.mortgage_monthly_payment
+            if annual_income > 0:
+                mortgage_balance_to_income = loans.mortgage_balance / annual_income
+                mortgage_payment_burden = (loans.mortgage_monthly_payment / monthly_income * 100) if monthly_income > 0 else 0.0
+                signals_used['mortgage_balance_to_income_ratio'] = mortgage_balance_to_income
+                signals_used['mortgage_payment_burden_percent'] = mortgage_payment_burden
+        
+        # Include student loan-specific signals
+        if loans.has_student_loan:
+            signals_used['student_loan_balance'] = loans.student_loan_balance
+            signals_used['student_loan_interest_rate'] = loans.student_loan_interest_rate
+            signals_used['student_loan_monthly_payment'] = loans.student_loan_monthly_payment
+            if annual_income > 0:
+                student_loan_balance_to_income = loans.student_loan_balance / annual_income
+                student_loan_payment_burden = (loans.student_loan_monthly_payment / monthly_income * 100) if monthly_income > 0 else 0.0
+                signals_used['student_loan_balance_to_income_ratio'] = student_loan_balance_to_income
+                signals_used['student_loan_payment_burden_percent'] = student_loan_payment_burden
+        
+        if monthly_income > 0:
+            signals_used['balance_to_income_ratio'] = loans.balance_to_income_ratio
+            signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
+            signals_used['monthly_income'] = monthly_income
+        
+        # Include next payment due date and last payment date for context
+        if loans.earliest_next_payment_due_date:
+            signals_used['earliest_next_payment_due_date'] = loans.earliest_next_payment_due_date.isoformat()
+        if loans.earliest_last_payment_date:
+            signals_used['earliest_last_payment_date'] = loans.earliest_last_payment_date.isoformat()
     else:
         reasoning = "Does not match Debt Burden criteria"
-        if loans.loan_payment_burden_percent > 0:
-            reasoning += f" (loan payments {loans.loan_payment_burden_percent:.1f}% of income < 30%)"
-        signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
-        signals_used['any_loan_overdue'] = loans.any_loan_overdue
+        if loans.has_mortgage and annual_income > 0:
+            mortgage_balance_to_income = loans.mortgage_balance / annual_income
+            mortgage_payment_burden = (loans.mortgage_monthly_payment / monthly_income * 100) if monthly_income > 0 else 0.0
+            reasoning += f" (mortgage: balance-to-income {mortgage_balance_to_income:.2f} < {MORTGAGE_BALANCE_TO_INCOME_THRESHOLD}, payment burden {mortgage_payment_burden:.1f}% < {MORTGAGE_PAYMENT_BURDEN_THRESHOLD}%)"
+        if loans.has_student_loan and annual_income > 0:
+            student_loan_balance_to_income = loans.student_loan_balance / annual_income
+            student_loan_payment_burden = (loans.student_loan_monthly_payment / monthly_income * 100) if monthly_income > 0 else 0.0
+            reasoning += f" (student loan: balance-to-income {student_loan_balance_to_income:.2f} < {STUDENT_LOAN_BALANCE_TO_INCOME_THRESHOLD}, payment burden {student_loan_payment_burden:.1f}% < {STUDENT_LOAN_PAYMENT_BURDEN_THRESHOLD}%)"
+        
+        signals_used['total_loan_balance'] = loans.total_loan_balance
+        signals_used['average_interest_rate'] = loans.average_interest_rate
+        if monthly_income > 0:
+            signals_used['balance_to_income_ratio'] = loans.balance_to_income_ratio
+            signals_used['loan_payment_burden_percent'] = loans.loan_payment_burden_percent
     
     return matches, reasoning, signals_used
 

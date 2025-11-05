@@ -23,8 +23,10 @@ from spendsense.recommend.engine import generate_recommendations
 from spendsense.personas.assignment import assign_persona
 from spendsense.features.signals import calculate_signals
 
-# Set seed for reproducibility
-random.seed(42)
+# Set seed for reproducibility - USE CONSTANT VALUE FOR CONSISTENT RESULTS
+RANDOM_SEED = 42  # Constant seed for reproducibility
+random.seed(RANDOM_SEED)
+print(f"Random seed set to: {RANDOM_SEED}")
 
 
 def create_user_for_persona(
@@ -90,10 +92,20 @@ def create_user_for_persona(
         # Determine transaction parameters based on persona and overlay
         # For variable income, we need irregular pay gaps >45 days
         if persona_type == "variable_income" or multi_persona_overlay == "variable_income":
-            # Generate irregular income with gaps >45 days
-            transactions_list = _generate_variable_income_transactions(
-                account.account_id, account.type, transaction_gen
-            )
+            if account.type == "checking":
+                # Generate irregular income with gaps >45 days
+                transactions_list = _generate_variable_income_transactions(
+                    account.account_id, account.type, transaction_gen
+                )
+                # Persona 2 can have 3+ subscriptions because Persona 2 priority (2) > Persona 3 priority (3)
+                # If both match, Persona 2 will win, so no need to limit subscriptions
+            else:
+                # For non-checking accounts, use standard generation
+                transactions_list = transaction_gen.generate_transactions_for_account(
+                    account.account_id,
+                    account.type,
+                    months=5
+                )
         else:
             income_freq = random.choice(["biweekly", "monthly"])
             transactions_list = transaction_gen.generate_transactions_for_account(
@@ -160,6 +172,57 @@ def create_user_for_persona(
                 transactions_list = _limit_subscriptions_for_persona5(
                     account.account_id, transactions_list
                 )
+                
+                # Ensure income is present for loan calculations
+                # Add some subscription transactions (but <3 merchants) to ensure 3+ behaviors
+                if len([t for t in transactions_list if t.get("category_primary") == "Income"]) < 3:
+                    # Add more income transactions
+                    from spendsense.ingest.merchants import INCOME_MERCHANTS
+                    end_date = datetime.now().date()
+                    for i in range(3):
+                        income_date = end_date - timedelta(days=30 * (i + 1))
+                        merchant_name = random.choice(INCOME_MERCHANTS)
+                        transactions_list.append({
+                            "transaction_id": str(uuid.uuid4()),
+                            "account_id": account.account_id,
+                            "date": income_date,
+                            "amount": -random.uniform(2000, 5000),  # Negative = income
+                            "merchant_name": merchant_name,
+                            "merchant_entity_id": "income_001",
+                            "payment_channel": "other",
+                            "category_primary": "Income",
+                            "category_detailed": "Payroll",
+                            "pending": False
+                        })
+        
+        # Ensure subscriptions are present for behavior count (unless persona explicitly avoids them)
+        if (persona_type != "debt_burden" and multi_persona_overlay != "debt_burden" and 
+            persona_type != "variable_income" and multi_persona_overlay != "variable_income") and account.type == "checking":
+            # Add some subscription transactions if not already present
+            subscription_count = len([t for t in transactions_list if t.get("merchant_name") in ["Netflix", "Spotify", "Gym Membership"]])
+            if subscription_count < 2:
+                # Add 1-2 subscription transactions to ensure behavior count
+                from spendsense.ingest.merchants import get_subscription_merchants
+                try:
+                    subscription_merchants = get_subscription_merchants()
+                except:
+                    subscription_merchants = ["Netflix", "Spotify", "Gym Membership"]
+                end_date = datetime.now().date()
+                for i in range(2):
+                    sub_date = end_date - timedelta(days=30 * (i + 1))
+                    merchant_name = random.choice(subscription_merchants) if subscription_merchants else "Netflix"
+                    transactions_list.append({
+                        "transaction_id": str(uuid.uuid4()),
+                        "account_id": account.account_id,
+                        "date": sub_date,
+                        "amount": random.uniform(10, 30),
+                        "merchant_name": merchant_name,
+                        "merchant_entity_id": f"sub_{i}",
+                        "payment_channel": "online",
+                        "category_primary": "Entertainment",
+                        "category_detailed": "Subscription",
+                        "pending": False
+                    })
         
         # Generate liability if credit card, mortgage, or student loan with balance
         # Do this BEFORE adding transactions so we can use liability data for minimum payment transactions
@@ -185,31 +248,64 @@ def create_user_for_persona(
                         # Set overdue flag
                         liability_data['is_overdue'] = True
                 
-                # For debt burden persona, ensure loan payments meet criteria
+                # For debt burden persona, ensure loan payments meet NEW criteria
                 if (persona_type == "debt_burden" or multi_persona_overlay == "debt_burden") and account.type in ["mortgage", "student_loan"]:
-                    # Calculate monthly income from checking account transactions
-                    checking_account = next((a for a in accounts if a.type == "checking"), None)
-                    if checking_account:
-                        # Estimate monthly income from transactions (will be calculated properly later)
-                        # For now, set loan payment to be ≥30% of a reasonable income range
-                        # Or set overdue if reason is "overdue"
-                        if debt_burden_reason == "overdue":
-                            liability_data['is_overdue'] = True
+                    # Get income info stored in account data
+                    monthly_income = getattr(account, '_debt_burden_monthly_income', None)
+                    annual_income = getattr(account, '_debt_burden_annual_income', None)
+                    
+                    # If income info not stored, estimate from checking account
+                    if monthly_income is None or monthly_income == 0:
+                        checking_account = next((a for a in accounts if a.type == "checking"), None)
+                        if checking_account and checking_account.balance_current > 0:
+                            # Estimate income from checking balance (assume 1-2 months buffer)
+                            monthly_income = checking_account.balance_current / random.uniform(1.0, 2.0)
+                            annual_income = monthly_income * 12
                         else:
-                            # Ensure minimum payment is high enough to meet burden criteria
-                            # Typical income range: $40k-$80k annually = $3.3k-$6.7k monthly
-                            # 30% of $3.3k = $990/month, 30% of $6.7k = $2,010/month
-                            # So set minimum payment to $1,000-$2,500/month range
-                            if account.type == "mortgage":
-                                # Mortgage payments typically $1,000-$3,000/month
-                                liability_data['minimum_payment_amount'] = random.uniform(1000, 3000)
-                            elif account.type == "student_loan":
-                                # Student loan payments typically $200-$800/month
-                                # But we need higher to meet burden - set to $1,000-$2,500
-                                liability_data['minimum_payment_amount'] = random.uniform(1000, 2500)
-                            
-                            # Ensure last payment matches minimum (user making minimum payments)
-                            liability_data['last_payment_amount'] = liability_data['minimum_payment_amount']
+                            # No income case
+                            monthly_income = 0
+                            annual_income = 0
+                    
+                    if debt_burden_reason == "no_income" or (annual_income == 0 or monthly_income == 0):
+                        # No income case - any debt qualifies, set reasonable payment
+                        if account.type == "mortgage":
+                            liability_data['minimum_payment_amount'] = random.uniform(1000, 2500)
+                        elif account.type == "student_loan":
+                            liability_data['minimum_payment_amount'] = random.uniform(300, 800)
+                    else:
+                        # Calculate payment based on reason and account type
+                        if account.type == "mortgage":
+                            if debt_burden_reason == "mortgage_payment":
+                                # Payment burden ≥ 35% of income
+                                liability_data['minimum_payment_amount'] = monthly_income * random.uniform(0.35, 0.45)
+                            else:
+                                # Balance-to-income ratio case - calculate payment from balance
+                                # For mortgage with balance = annual_income * 4.0+, estimate payment
+                                # Assume 30-year mortgage at 5-6% interest
+                                mortgage_balance = account.balance_current
+                                # Rough formula: monthly payment ≈ balance * (rate/12) / (1 - (1+rate/12)^(-360))
+                                # Simplified: payment ≈ balance / 200 for 30yr @ 5%
+                                liability_data['minimum_payment_amount'] = mortgage_balance / random.uniform(180, 220)
+                        elif account.type == "student_loan":
+                            if debt_burden_reason == "student_payment":
+                                # Payment burden ≥ 25% of income
+                                liability_data['minimum_payment_amount'] = monthly_income * random.uniform(0.25, 0.35)
+                            else:
+                                # Balance-to-income ratio case - calculate payment from balance
+                                # For student loan with balance = annual_income * 1.5+, estimate payment
+                                # Assume 10-year loan at 5-7% interest
+                                student_loan_balance = account.balance_current
+                                # Rough formula: monthly payment ≈ balance / 120 for 10yr @ 6%
+                                liability_data['minimum_payment_amount'] = student_loan_balance / random.uniform(100, 140)
+                        
+                        # Ensure last payment matches minimum (user making minimum payments)
+                        liability_data['last_payment_amount'] = liability_data['minimum_payment_amount']
+                    
+                    # Set reasonable interest rate
+                    if account.type == "mortgage":
+                        liability_data['interest_rate'] = random.uniform(4.5, 7.0)
+                    elif account.type == "student_loan":
+                        liability_data['interest_rate'] = random.uniform(4.0, 7.5)
         
         # Sort transactions by date
         transactions_list.sort(key=lambda x: x["date"])
@@ -464,11 +560,16 @@ def _create_variable_income_profile(user, account_gen, transaction_gen, liabilit
     Behaviors ensured:
     1. Income Stability (irregular - primary): Median pay gap > 45 days
     2. Savings Behavior (low/no savings buffer): Cash-flow buffer < 1 month
-    3. Credit Utilization (low to moderate - may use credit to smooth income)
+    3. Credit Utilization (low <50% to avoid Persona 1)
+    4. Subscription Detection (can have 3+ subscriptions - Persona 2 priority > Persona 3)
     
     CRITICAL: Both conditions must be met:
     - Median pay gap > 45 days (ensured by _generate_variable_income_transactions)
     - Cash-flow buffer < 1 month (ensured by low checking balance relative to expenses)
+    
+    To avoid matching higher priority personas:
+    - Credit utilization <50% (avoids Persona 1)
+    - Note: Persona 2 can have 3+ subscriptions because Persona 2 priority (2) > Persona 3 priority (3)
     """
     accounts = []
     
@@ -499,18 +600,18 @@ def _create_variable_income_profile(user, account_gen, transaction_gen, liabilit
         )
         accounts.append(Account(**savings_data))
     
-    # Optional credit card (may use to smooth income) - low utilization
-    if random.random() < 0.7:
-        credit_limit = random.uniform(3000, 10000)
-        credit_card_data = account_gen.create_account_custom(
-            user_id=user.user_id,
-            account_type="credit_card",
-            counter=2,
-            credit_limit=credit_limit,
-            utilization_range=(0.1, 0.4),  # Low to moderate
-            account_id_suffix="002"
-        )
-        accounts.append(Account(**credit_card_data))
+    # Credit card with LOW utilization (<50% to avoid Persona 1)
+    # Always add credit card for Persona 2 to ensure 3+ behaviors
+    credit_limit = random.uniform(3000, 10000)
+    credit_card_data = account_gen.create_account_custom(
+        user_id=user.user_id,
+        account_type="credit_card",
+        counter=len(accounts),
+        credit_limit=credit_limit,
+        utilization_range=(0.1, 0.4),  # Low to moderate (<50%)
+        account_id_suffix="002"
+    )
+    accounts.append(Account(**credit_card_data))
     
     return accounts
 
@@ -627,16 +728,23 @@ def _create_debt_burden_profile(user, account_gen, transaction_gen, liability_ge
     
     Behaviors ensured:
     1. Loan Accounts (mortgage OR student loan - primary)
-    2. Loan Payment Burden (≥30% of income OR overdue)
+    2. Loan Payment Burden (based on new criteria)
     3. Credit Utilization (low <50% to avoid Persona 1)
     
-    CRITICAL: Persona 5 criteria:
-    - Has mortgage account OR student loan account AND
-    - (Total monthly loan payments ≥ 30% of monthly income) OR
-    - (Any loan is overdue)
+    CRITICAL: Persona 5 criteria (NEW):
+    MORTGAGE (if has mortgage):
+    - Balance-to-income ratio ≥ 4.0 (mortgage balance ≥ 4x annual income) OR
+    - Monthly payment burden ≥ 35% of income
+    
+    STUDENT LOAN (if has student loan):
+    - Balance-to-income ratio ≥ 1.5 (student loan balance ≥ 1.5x annual income) OR
+    - Monthly payment burden ≥ 25% of income
+    
+    If no income: Any mortgage or student loan qualifies
     
     Args:
-        debt_burden_reason: One of "mortgage", "student_loan", "both", "overdue"
+        debt_burden_reason: One of "mortgage", "student_loan", "both", "mortgage_balance", "mortgage_payment", 
+                         "student_balance", "student_payment", "no_income"
                          If None, defaults to "mortgage"
     
     To avoid matching higher priority personas:
@@ -661,66 +769,112 @@ def _create_debt_burden_profile(user, account_gen, transaction_gen, liability_ge
     )
     accounts.append(Account(**checking_data))
     
-    # Optional savings account (small)
-    if random.random() < 0.5:
-        savings_data = account_gen.create_account_custom(
-            user_id=user.user_id,
-            account_type="savings",
-            counter=1,
-            balance_range=(1000, 5000),
-            account_id_suffix="001"
-        )
-        accounts.append(Account(**savings_data))
-    
     # Credit card with LOW utilization (<50% to avoid Persona 1)
-    if random.random() < 0.6:
-        credit_limit = random.uniform(5000, 20000)
-        credit_card_data = account_gen.create_account_custom(
-            user_id=user.user_id,
-            account_type="credit_card",
-            counter=2,
-            credit_limit=credit_limit,
-            utilization_range=(0.05, 0.45),  # Below 50% threshold
-            account_id_suffix="002"
-        )
-        accounts.append(Account(**credit_card_data))
+    # Always add credit card for debt burden users to ensure 3+ behaviors
+    credit_limit = random.uniform(5000, 20000)
+    credit_card_data = account_gen.create_account_custom(
+        user_id=user.user_id,
+        account_type="credit_card",
+        counter=len(accounts),
+        credit_limit=credit_limit,
+        utilization_range=(0.05, 0.45),  # Below 50% threshold
+        account_id_suffix="002"
+    )
+    accounts.append(Account(**credit_card_data))
+    
+    # Always add savings account for debt burden users to ensure 3+ behaviors
+    # (Loan + Income + Credit Card + Savings = 4 behaviors)
+    savings_data = account_gen.create_account_custom(
+        user_id=user.user_id,
+        account_type="savings",
+        counter=len(accounts),
+        balance_range=(1000, 5000),
+        account_id_suffix="001"
+    )
+    accounts.append(Account(**savings_data))
+    
+    # Set income range for calculating loan balances/payments
+    # Typical income: $40k-$100k annually = $3.3k-$8.3k monthly
+    annual_income = random.uniform(40000, 100000)
+    monthly_income = annual_income / 12
+    
+    # Store income info in account metadata for later use
+    # We'll use checking account balance as a proxy for income level
+    checking_account = accounts[0] if accounts else None
+    if checking_account:
+        # Adjust checking balance to reflect income level (1-2 months buffer)
+        checking_account.balance_current = monthly_income * random.uniform(1.0, 2.0)
+        checking_account.balance_available = checking_account.balance_current
     
     # Loan accounts based on reason
     reason = debt_burden_reason or "mortgage"
     
-    if reason == "mortgage" or reason == "both":
-        # Mortgage account
+    if reason in ["mortgage", "both", "mortgage_balance", "mortgage_payment"]:
+        # Mortgage account - balance depends on reason
+        if reason == "mortgage_balance":
+            # Balance-to-income ≥ 4.0: mortgage = annual_income * 4.0+
+            mortgage_balance = annual_income * random.uniform(4.0, 6.0)
+        elif reason == "mortgage_payment":
+            # Payment burden ≥ 35%: monthly payment = monthly_income * 0.35+
+            # Estimate mortgage balance from payment (assume 30-year, 5% interest)
+            monthly_payment = monthly_income * random.uniform(0.35, 0.45)
+            # Rough estimate: payment of $X/month ≈ balance of $X * 200 (for 30yr @ 5%)
+            mortgage_balance = monthly_payment * random.uniform(180, 220)
+        else:
+            # Default: balance that will meet balance-to-income threshold
+            mortgage_balance = annual_income * random.uniform(4.0, 5.5)
+        
         mortgage_data = account_gen.create_account_custom(
             user_id=user.user_id,
             account_type="mortgage",
             counter=len(accounts),
-            balance_range=(100000, 500000),  # $100k-$500k mortgage
+            balance_range=(mortgage_balance * 0.95, mortgage_balance * 1.05),
             account_id_suffix="mortgage"
         )
         accounts.append(Account(**mortgage_data))
+        # Store income info for liability generation
+        mortgage_data['_debt_burden_annual_income'] = annual_income
+        mortgage_data['_debt_burden_monthly_income'] = monthly_income
     
-    if reason == "student_loan" or reason == "both":
-        # Student loan account
+    if reason in ["student_loan", "both", "student_balance", "student_payment"]:
+        # Student loan account - balance depends on reason
+        if reason == "student_balance":
+            # Balance-to-income ≥ 1.5: student loan = annual_income * 1.5+
+            student_loan_balance = annual_income * random.uniform(1.5, 2.5)
+        elif reason == "student_payment":
+            # Payment burden ≥ 25%: monthly payment = monthly_income * 0.25+
+            monthly_payment = monthly_income * random.uniform(0.25, 0.35)
+            # Rough estimate: payment of $X/month ≈ balance of $X * 120 (for 10yr @ 6%)
+            student_loan_balance = monthly_payment * random.uniform(100, 140)
+        else:
+            # Default: balance that will meet balance-to-income threshold
+            student_loan_balance = annual_income * random.uniform(1.5, 2.0)
+        
         student_loan_data = account_gen.create_account_custom(
             user_id=user.user_id,
             account_type="student_loan",
             counter=len(accounts),
-            balance_range=(10000, 100000),  # $10k-$100k student loan
+            balance_range=(student_loan_balance * 0.95, student_loan_balance * 1.05),
             account_id_suffix="student"
         )
         accounts.append(Account(**student_loan_data))
+        # Store income info for liability generation
+        student_loan_data['_debt_burden_annual_income'] = annual_income
+        student_loan_data['_debt_burden_monthly_income'] = monthly_income
     
-    # If reason is "overdue", the overdue status will be set in liability generation
-    if reason == "overdue":
-        # Default to mortgage if none specified
+    if reason == "no_income":
+        # No income case - any debt qualifies
+        # Create mortgage with moderate balance
         mortgage_data = account_gen.create_account_custom(
             user_id=user.user_id,
             account_type="mortgage",
             counter=len(accounts),
-            balance_range=(100000, 500000),
+            balance_range=(150000, 300000),
             account_id_suffix="mortgage"
         )
         accounts.append(Account(**mortgage_data))
+        mortgage_data['_debt_burden_annual_income'] = 0
+        mortgage_data['_debt_burden_monthly_income'] = 0
     
     return accounts
 
@@ -814,11 +968,12 @@ def _generate_variable_income_transactions(account_id: str, account_type: str, t
     
     transactions_list = []
     end_date = datetime.now().date()
-    start_date = end_date - timedelta(days=180)  # Use 180 days for better gap calculation
+    # Pay gap uses 90-day lookback for 30d window, so generate deposits within last 90 days
+    lookback_start = end_date - timedelta(days=90)
     
-    # Generate irregular income deposits with gaps >45 days
-    # Strategy: Generate deposits with large gaps (50-90 days) over 180 days
-    # This ensures median gap >45 days when calculated over the full period
+    # Generate irregular income deposits with gaps >45 days within the 90-day lookback window
+    # Strategy: Generate exactly 3 deposits with gaps of 50-90 days
+    # This ensures median gap >45 days when calculated over the 90-day period
     merchant_name = random.choice(INCOME_MERCHANTS)
     merchant_info = get_merchant_info(merchant_name)
     if not merchant_info:
@@ -830,38 +985,41 @@ def _generate_variable_income_transactions(account_id: str, account_type: str, t
     
     base_amount = random.uniform(2000, 6000)
     
-    # Generate irregular income deposits over 180 days
-    # Start with first deposit
-    current_date = start_date
-    amount = base_amount * random.uniform(0.9, 1.1)
-    transactions_list.append({
-        "transaction_id": str(uuid.uuid4()),
-        "account_id": account_id,
-        "date": current_date,
-        "amount": -amount,
-        "merchant_name": merchant_name,
-        "merchant_entity_id": merchant_info["merchant_entity_id"],
-        "payment_channel": merchant_info["payment_channel"],
-        "category_primary": "Income",
-        "category_detailed": "Payroll",
-        "pending": False
-    })
+    # Generate exactly 2 deposits with gap >45 days within the 90-day window
+    # Strategy: For median gap >45 days with 2 deposits (1 gap), we just need gap >45
+    # This is simpler and ensures we fit within the 90-day window
+    deposit_dates = []
     
-    # Add 3-4 more deposits with gaps >45 days (50-90 days to ensure median > 45)
-    # Need at least 3 deposits total to calculate median gap reliably
-    num_deposits = random.randint(3, 4)
-    for i in range(num_deposits):
-        gap_days = random.randint(50, 90)  # Gap >45 days (ensures median > 45)
-        current_date = current_date + timedelta(days=gap_days)
-        
-        if current_date > end_date:
-            break
-        
+    # First deposit: early in the window
+    deposit_dates.append(lookback_start + timedelta(days=random.randint(1, 10)))
+    
+    # Second deposit: 46-80 days after first (ensures gap >45 and fits in window)
+    gap = random.randint(46, 80)
+    second_date = deposit_dates[0] + timedelta(days=gap)
+    
+    # Ensure second deposit is within window
+    if second_date > end_date:
+        second_date = end_date - timedelta(days=random.randint(1, 5))
+    
+    deposit_dates.append(second_date)
+    
+    # Verify gap is >45
+    gap_days = (deposit_dates[1] - deposit_dates[0]).days
+    if gap_days <= 45:
+        # Adjust second deposit to ensure gap >45
+        days_remaining = (end_date - deposit_dates[0]).days
+        if days_remaining >= 46:
+            deposit_dates[1] = deposit_dates[0] + timedelta(days=random.randint(46, min(80, days_remaining)))
+            if deposit_dates[1] > end_date:
+                deposit_dates[1] = end_date - timedelta(days=random.randint(1, 5))
+    
+    # Create transactions for each deposit
+    for deposit_date in deposit_dates:
         amount = base_amount * random.uniform(0.8, 1.2)
         transactions_list.append({
             "transaction_id": str(uuid.uuid4()),
             "account_id": account_id,
-            "date": current_date,
+            "date": deposit_date,
             "amount": -amount,
             "merchant_name": merchant_name,
             "merchant_entity_id": merchant_info["merchant_entity_id"],
@@ -871,14 +1029,29 @@ def _generate_variable_income_transactions(account_id: str, account_type: str, t
             "pending": False
         })
     
-    # Add regular spending transactions
+    # Add regular spending transactions manually (avoid generating income)
     # These will be used to calculate avg_monthly_expenses for buffer calculation
-    spending_txns = transaction_gen.generate_transactions_for_account(
-        account_id, account_type, months=6, income_frequency=None  # 6 months = 180 days
-    )
-    # Filter out income transactions from spending (we've already added them)
-    spending_txns = [t for t in spending_txns if t.get("amount", 0) > 0]
-    transactions_list.extend(spending_txns)
+    # Use 3 months (90 days) to match the lookback window
+    start_date = lookback_start
+    
+    # Generate a reasonable number of spending transactions
+    # Target: ~20-30 transactions over 90 days for expense calculation
+    num_spending_txns = random.randint(20, 30)
+    for i in range(num_spending_txns):
+        txn_date = start_date + timedelta(days=random.randint(1, 90))
+        amount = random.uniform(10, 200)  # Spending amounts
+        transactions_list.append({
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": txn_date,
+            "amount": amount,  # Positive = spending
+            "merchant_name": "Merchant",
+            "merchant_entity_id": f"merchant_{i}",
+            "payment_channel": "debit",
+            "category_primary": "Shopping",
+            "category_detailed": "General",
+            "pending": False
+        })
     
     return transactions_list
 
@@ -1501,8 +1674,15 @@ def generate_persona_distributed_users(num_users: int = 100):
     # High utilization reasons for distribution
     high_util_reasons = ["utilization_50", "interest_charges", "minimum_payment_only", "is_overdue"]
     
-    # Debt burden reasons for distribution
-    debt_burden_reasons = ["mortgage", "student_loan", "both", "overdue"]
+    # Debt burden reasons for distribution (matching new criteria)
+    debt_burden_reasons = [
+        "mortgage",              # Default mortgage (balance-to-income ≥ 4.0)
+        "mortgage_payment",      # Mortgage payment burden ≥ 35%
+        "student_loan",          # Default student loan (balance-to-income ≥ 1.5)
+        "student_payment",       # Student loan payment burden ≥ 25%
+        "both",                  # Both mortgage and student loan
+        "no_income"              # No income case
+    ]
     
     # Generate 15 pure persona users + 5 multi-persona users per persona
     for persona in personas:

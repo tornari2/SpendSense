@@ -46,26 +46,49 @@ class IncomeSignals:
 def calculate_income_stability(
     checking_accounts: List[Account],
     all_transactions: List[Transaction],
-    window_days: int
+    window_days: int,
+    all_transactions_for_lookback: List[Transaction] = None
 ) -> IncomeSignals:
     """
     Calculate income stability and cash flow metrics.
     
+    For pay gap calculation, uses a longer lookback period:
+    - 90-day lookback for 30-day window (to detect gaps >45 days)
+    - Full window (180d) for 180-day window
+    
+    Cash-flow buffer uses window-specific transactions.
+    
     Args:
         checking_accounts: List of checking accounts
-        all_transactions: All transactions (to detect income and expenses)
+        all_transactions: Transactions in the window (for buffer calculation)
         window_days: Size of the time window (30 or 180 days)
+        all_transactions_for_lookback: All transactions (for pay gap lookback)
     
     Returns:
         IncomeSignals object with calculated metrics
     """
-    # Detect income transactions (payroll deposits)
-    income_transactions = _detect_payroll_deposits(all_transactions)
+    # Use window transactions for cash-flow buffer and total income
+    window_income_transactions = _detect_payroll_deposits(all_transactions)
+    total_income = sum(abs(t.amount) for t in window_income_transactions)
     
+    # Use longer lookback for pay gap calculation (similar to subscription detection)
+    # For 30-day window, use 90-day lookback; for 180-day window, use full window
+    if all_transactions_for_lookback:
+        lookback_days = 90 if window_days == 30 else window_days
+        from .window_utils import filter_transactions_by_window
+        lookback_transactions = filter_transactions_by_window(
+            all_transactions_for_lookback, 
+            lookback_days
+        )
+    else:
+        # Fallback: use window transactions if no lookback provided
+        lookback_transactions = all_transactions
+    
+    # Detect income from lookback period (for pay gap)
+    income_transactions = _detect_payroll_deposits(lookback_transactions)
     payroll_detected = len(income_transactions) > 0
-    total_income = sum(abs(t.amount) for t in income_transactions)
     
-    # Analyze payment frequency
+    # Analyze payment frequency and gaps from lookback transactions
     payment_frequency = None
     median_gap = 0.0
     variability = 0.0
@@ -77,12 +100,12 @@ def calculate_income_stability(
             variability = stdev(gaps) if len(gaps) > 1 else 0.0
             payment_frequency = _determine_payment_frequency(median_gap)
     
-    # Calculate cash flow buffer
+    # Calculate cash flow buffer using window-specific transactions
     total_checking_balance = sum(
         acc.balance_available for acc in checking_accounts
     ) if checking_accounts else 0.0
     
-    # Calculate average monthly expenses
+    # Calculate average monthly expenses from window transactions
     avg_monthly_expenses = _calculate_avg_monthly_expenses(
         all_transactions, window_days
     )

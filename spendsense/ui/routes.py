@@ -16,6 +16,8 @@ from spendsense.ingest.schema import User, Recommendation, PersonaHistory, Decis
 from spendsense.features.signals import calculate_signals
 from spendsense.personas.assignment import assign_persona
 from spendsense.guardrails.disclosure import append_disclosure
+from .persona_helpers import format_persona_signals
+from spendsense.personas.priority import PERSONA_NAMES
 
 router = APIRouter(tags=["operator-ui"])
 
@@ -224,7 +226,8 @@ def user_list(
             "users": user_data,
             "search": search or "",
             "persona_filter": persona_filter or "",
-            "consent_filter": consent_filter or "all"
+            "consent_filter": consent_filter or "all",
+            "persona_names": PERSONA_NAMES
         }
     )
 
@@ -292,6 +295,7 @@ def user_detail_page(
             "window_days": ph.window_days,
             "assigned_at": ph.assigned_at.isoformat(),
             "signals": ph.signals,
+            "signals_formatted": format_persona_signals(ph.signals or {}, ph.persona) if ph.signals else [],
             "is_primary": ph.window_days == primary_window_days if primary_window_days else False
         }
         for ph in persona_history_records
@@ -542,16 +546,31 @@ def recommendation_detail_page(
     
     # Get decision trace
     from spendsense.ingest.schema import DecisionTrace
-    trace = session.query(DecisionTrace).filter(
+    trace_record = session.query(DecisionTrace).filter(
         DecisionTrace.recommendation_id == recommendation_id
     ).first()
+    
+    # Convert trace to dict format for template
+    trace_dict = None
+    if trace_record:
+        trace_dict = {
+            "input_signals": trace_record.input_signals if isinstance(trace_record.input_signals, dict) else json.loads(trace_record.input_signals) if trace_record.input_signals else {},
+            "persona_assigned": trace_record.persona_assigned,
+            "persona_reasoning": trace_record.persona_reasoning,
+            "template_used": trace_record.template_used,
+            "offer_id": trace_record.offer_id,
+            "variables_inserted": trace_record.variables_inserted if isinstance(trace_record.variables_inserted, dict) else json.loads(trace_record.variables_inserted) if trace_record.variables_inserted else {},
+            "eligibility_checks": trace_record.eligibility_checks if isinstance(trace_record.eligibility_checks, dict) else json.loads(trace_record.eligibility_checks) if trace_record.eligibility_checks else {},
+            "timestamp": trace_record.timestamp.isoformat() if trace_record.timestamp else None,
+            "version": trace_record.version
+        }
     
     return templates.TemplateResponse(
         "recommendation_detail.html",
         {
             "request": request,
             "recommendation": recommendation,
-            "trace": trace
+            "trace": trace_dict
         }
     )
 

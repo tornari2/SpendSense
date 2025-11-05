@@ -48,25 +48,37 @@
                 <details class="decision-trace">
                     <summary><strong>⭐ Decision Trace (Why this recommendation was made)</strong></summary>
                     <div class="trace-content">
-                        <h5>Input Signals Used:</h5>
-                        <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
-                        
                         <h5>Persona Assignment:</h5>
                         <p><strong>Persona:</strong> {{ rec.decision_trace.persona_assigned }}</p>
                         <p><strong>Reasoning:</strong> {{ rec.decision_trace.persona_reasoning }}</p>
                         
+                        {% if rec.decision_trace.input_signals and rec.decision_trace.input_signals.persona_signals %}
+                        <h5>Signals That Triggered This Recommendation:</h5>
+                        <pre>{{ rec.decision_trace.input_signals.persona_signals|tojson }}</pre>
+                        {% elif rec.decision_trace.input_signals %}
+                        <h5>Signals That Triggered This Recommendation:</h5>
+                        <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
+                        {% endif %}
+                        
+                        {% if rec.decision_trace.template_used %}
                         <h5>Template Used:</h5>
                         <p>{{ rec.decision_trace.template_used }}</p>
+                        {% endif %}
                         
+                        {% if rec.decision_trace.offer_id %}
+                        <h5>Offer ID:</h5>
+                        <p>{{ rec.decision_trace.offer_id }}</p>
+                        {% endif %}
+                        
+                        {% if rec.decision_trace.variables_inserted %}
                         <h5>Variables Inserted:</h5>
                         <pre>{{ rec.decision_trace.variables_inserted|tojson }}</pre>
+                        {% endif %}
                         
+                        {% if rec.decision_trace.eligibility_checks %}
                         <h5>Eligibility Checks:</h5>
                         <pre>{{ rec.decision_trace.eligibility_checks|tojson }}</pre>
-                        
-                        <h5>Metadata:</h5>
-                        <p><strong>Timestamp:</strong> {{ rec.decision_trace.timestamp }}</p>
-                        <p><strong>Version:</strong> {{ rec.decision_trace.version }}</p>
+                        {% endif %}
                     </div>
                 </details>
                 {% endif %}

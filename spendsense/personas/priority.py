@@ -8,8 +8,8 @@ Priority Order:
 1. High Utilization (most urgent financial risk)
 2. Variable Income Budgeter (cash flow instability)
 3. Subscription-Heavy (actionable savings opportunity)
-4. Savings Builder (positive reinforcement)
-5. Debt Burden (loan payment management)
+4. Debt Burden (loan payment management)
+5. Savings Builder (positive reinforcement)
 """
 
 from typing import List, Tuple, Optional
@@ -27,8 +27,8 @@ PERSONA_PRIORITY = {
     'persona1_high_utilization': 1,
     'persona2_variable_income': 2,
     'persona3_subscription_heavy': 3,
-    'persona4_savings_builder': 4,
-    'persona5_debt_burden': 5,
+    'persona5_debt_burden': 4,
+    'persona4_savings_builder': 5,
 }
 
 # Persona display names
@@ -97,13 +97,11 @@ def evaluate_all_personas(signals_30d, signals_180d=None, window_days=30):
     if matches:
         matching_personas.append(('persona1_high_utilization', reasoning, signals))
     
-    # Persona 2: Variable Income Budgeter (uses window-specific signals for buffer, 180d for pay gap)
-    # When evaluating for 180d window, use 180d signals for buffer; for 30d window, use 30d signals
-    if window_days == 180 and signals_180d:
-        signals_for_buffer = signals_180d
-    else:
-        signals_for_buffer = signals_30d
-    matches, reasoning, signals = check_persona2_variable_income(signals_for_buffer, signals_180d)
+    # Persona 2: Variable Income Budgeter
+    # Now works for both windows because pay gap uses appropriate lookback internally
+    # (90-day lookback for 30d window, full window for 180d window)
+    signals_to_use = signals_180d if window_days == 180 and signals_180d else signals_30d
+    matches, reasoning, signals = check_persona2_variable_income(signals_to_use, signals_180d=None)
     if matches:
         matching_personas.append(('persona2_variable_income', reasoning, signals))
     

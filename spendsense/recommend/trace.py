@@ -2,7 +2,7 @@
 Decision Trace Builder Module
 
 Creates complete decision traces for auditability.
-Captures all input signals, persona reasoning, template used, variables inserted, eligibility checks.
+Captures key signals, persona reasoning, template used, variables inserted, eligibility checks.
 """
 
 from dataclasses import dataclass, asdict
@@ -13,30 +13,61 @@ from spendsense.personas.assignment import PersonaAssignment
 from .templates import EducationTemplate
 from .offers import PartnerOffer
 from .eligibility import EligibilityResult
+from .signals import SignalContext
 
 
 @dataclass
 class DecisionTrace:
     """Decision trace for a recommendation."""
     recommendation_id: str
-    input_signals: Dict[str, Any]  # All signals used
-    persona_assigned: Optional[str]  # Persona ID
-    persona_reasoning: Optional[str]  # Why persona was assigned
-    template_used: Optional[str]  # Template ID (for education)
-    offer_id: Optional[str]  # Offer ID (for partner offers)
+    input_signals: Dict[str, Any]  # Key signals used (concise)
     variables_inserted: Dict[str, Any]  # Variables used in template/offer
     eligibility_checks: Dict[str, Any]  # Eligibility check results
     timestamp: datetime
+    triggered_signals: Optional[List[str]] = None  # List of signal IDs that triggered this recommendation
+    signal_context: Optional[Dict[str, Any]] = None  # Signal-specific context data
+    persona_assigned: Optional[str] = None  # Persona ID (for operator dashboard)
+    persona_reasoning: Optional[str] = None  # Why persona was assigned
+    template_used: Optional[str] = None  # Template ID (for education)
+    offer_id: Optional[str] = None  # Offer ID (for partner offers)
     version: str = "1.0"
+
+
+def _extract_key_signals(
+    persona_assignment: PersonaAssignment,
+    signals_30d: SignalSet
+) -> Dict[str, Any]:
+    """
+    Extract only the signals that triggered the persona/recommendation.
+    
+    Only stores the signals_used from persona assignment - these are the specific
+    signals that matched the persona criteria and triggered the recommendation.
+    
+    Args:
+        persona_assignment: PersonaAssignment with signals_used
+        signals_30d: 30-day signals (not used, kept for compatibility)
+    
+    Returns:
+        Dictionary containing only persona_signals (signals that triggered the recommendation)
+    """
+    key_signals = {}
+    
+    # Only include persona signals_used (what triggered the persona/recommendation)
+    # This is the ONLY data relevant to why this specific recommendation was made
+    if persona_assignment.signals_used:
+        key_signals['persona_signals'] = persona_assignment.signals_used
+    
+    return key_signals
 
 
 def create_education_trace(
     recommendation_id: str,
     template: EducationTemplate,
-    persona_assignment: PersonaAssignment,
+    persona_assignment: Optional[PersonaAssignment],
     signals_30d: SignalSet,
     signals_180d: SignalSet,
-    variables: Dict[str, Any]
+    variables: Dict[str, Any],
+    signal_context: Optional[SignalContext] = None
 ) -> DecisionTrace:
     """
     Create decision trace for an education recommendation.
@@ -52,17 +83,27 @@ def create_education_trace(
     Returns:
         DecisionTrace object
     """
-    # Serialize signals to dict
-    input_signals = {
-        'signals_30d': signals_30d.to_dict(),
-        'signals_180d': signals_180d.to_dict() if signals_180d else None
-    }
+    # Extract signals used - include both persona signals and triggered signal
+    input_signals = {}
+    triggered_signals = None
+    signal_context_data = None
+    
+    if persona_assignment and persona_assignment.signals_used:
+        input_signals['persona_signals'] = persona_assignment.signals_used
+    
+    if signal_context:
+        triggered_signals = [signal_context.signal_id]
+        signal_context_data = signal_context.context_data
+        input_signals['triggered_signal'] = signal_context.signal_id
+        input_signals['signal_name'] = signal_context.signal_name
     
     return DecisionTrace(
         recommendation_id=recommendation_id,
         input_signals=input_signals,
-        persona_assigned=persona_assignment.persona_id,
-        persona_reasoning=persona_assignment.reasoning,
+        triggered_signals=triggered_signals,
+        signal_context=signal_context_data,
+        persona_assigned=persona_assignment.persona_id if persona_assignment else None,
+        persona_reasoning=persona_assignment.reasoning if persona_assignment else None,
         template_used=template.template_id,
         offer_id=None,
         variables_inserted=variables,
@@ -75,10 +116,11 @@ def create_education_trace(
 def create_offer_trace(
     recommendation_id: str,
     offer: PartnerOffer,
-    persona_assignment: PersonaAssignment,
+    persona_assignment: Optional[PersonaAssignment],
     signals_30d: SignalSet,
     signals_180d: SignalSet,
-    eligibility_result: EligibilityResult
+    eligibility_result: EligibilityResult,
+    signal_context: Optional[SignalContext] = None
 ) -> DecisionTrace:
     """
     Create decision trace for a partner offer recommendation.
@@ -94,30 +136,34 @@ def create_offer_trace(
     Returns:
         DecisionTrace object
     """
-    # Serialize signals to dict
-    input_signals = {
-        'signals_30d': signals_30d.to_dict(),
-        'signals_180d': signals_180d.to_dict() if signals_180d else None
-    }
+    # Extract signals used - include both persona signals and triggered signal
+    input_signals = {}
+    triggered_signals = None
+    signal_context_data = None
     
-    # Serialize eligibility checks
+    if persona_assignment and persona_assignment.signals_used:
+        input_signals['persona_signals'] = persona_assignment.signals_used
+    
+    if signal_context:
+        triggered_signals = [signal_context.signal_id]
+        signal_context_data = signal_context.context_data
+        input_signals['triggered_signal'] = signal_context.signal_id
+        input_signals['signal_name'] = signal_context.signal_name
+    
+    # Simplify eligibility checks - only include what's relevant
     eligibility_checks = {
         'eligible': eligibility_result.eligible,
         'reasons': eligibility_result.reasons,
-        'failed_checks': eligibility_result.failed_checks,
-        'eligibility_criteria': {
-            'min_credit_score': offer.eligibility.min_credit_score,
-            'max_utilization': offer.eligibility.max_utilization,
-            'min_income': offer.eligibility.min_income,
-            'exclude_if_has': offer.eligibility.exclude_if_has,
-        }
+        'failed_checks': eligibility_result.failed_checks
     }
     
     return DecisionTrace(
         recommendation_id=recommendation_id,
         input_signals=input_signals,
-        persona_assigned=persona_assignment.persona_id,
-        persona_reasoning=persona_assignment.reasoning,
+        triggered_signals=triggered_signals,
+        signal_context=signal_context_data,
+        persona_assigned=persona_assignment.persona_id if persona_assignment else None,
+        persona_reasoning=persona_assignment.reasoning if persona_assignment else None,
         template_used=None,
         offer_id=offer.offer_id,
         variables_inserted={},  # Offers don't use variable substitution
@@ -140,6 +186,8 @@ def trace_to_dict(trace: DecisionTrace) -> Dict[str, Any]:
     return {
         'recommendation_id': trace.recommendation_id,
         'input_signals': trace.input_signals,
+        'triggered_signals': trace.triggered_signals,
+        'signal_context': trace.signal_context,
         'persona_assigned': trace.persona_assigned,
         'persona_reasoning': trace.persona_reasoning,
         'template_used': trace.template_used,
