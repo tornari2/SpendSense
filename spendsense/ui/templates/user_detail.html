@@ -72,12 +72,12 @@
                             </strong>
                         </li>
                         <li>Flags: 
-                            {% if user_detail.signals_30d.credit.flag_30_percent %}<span class="badge badge-warning">30%</span>{% endif %}
-                            {% if user_detail.signals_30d.credit.flag_50_percent %}<span class="badge badge-warning">50%</span>{% endif %}
-                            {% if user_detail.signals_30d.credit.flag_80_percent %}<span class="badge badge-error">80%</span>{% endif %}
-                            {% if user_detail.signals_30d.credit.is_overdue %}<span class="badge badge-error">Overdue</span>{% endif %}
-                            {% if user_detail.signals_30d.credit.minimum_payment_only %}<span class="badge badge-warning">Minimum Payment Only</span>{% endif %}
-                            {% if user_detail.signals_30d.credit.interest_charges_present %}<span class="badge badge-error">Interest Charges</span>{% endif %}
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_30d.credit.flag_30_percent else 'badge-inactive' }}">30%</span>
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_30d.credit.flag_50_percent else 'badge-inactive' }}">50%</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_30d.credit.flag_80_percent else 'badge-inactive' }}">80%</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_30d.credit.is_overdue else 'badge-inactive' }}">Overdue</span>
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_30d.credit.minimum_payment_only else 'badge-inactive' }}">Minimum Payment Only</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_30d.credit.interest_charges_present else 'badge-inactive' }}">Interest Charges</span>
                         </li>
                     </ul>
                 </div>
@@ -86,7 +86,7 @@
                     <h5>Income</h5>
                     <ul>
                         <li>Payroll Detected: <strong>{{ "Yes" if user_detail.signals_30d.income.payroll_detected else "No" }}</strong></li>
-                        <li>Payment Frequency: <strong>{{ user_detail.signals_30d.income.payment_frequency or "N/A" }}</strong></li>
+                        <li>Payment Frequency: <strong>{{ (user_detail.signals_30d.income.payment_frequency or "N/A")|title }}</strong></li>
                         <li>Cash Flow Buffer: <strong>{{ "%.1f"|format(user_detail.signals_30d.income.cash_flow_buffer_months) }} months</strong></li>
                     </ul>
                 </div>
@@ -125,12 +125,12 @@
                             </strong>
                         </li>
                         <li>Flags: 
-                            {% if user_detail.signals_180d.credit.flag_30_percent %}<span class="badge badge-warning">30%</span>{% endif %}
-                            {% if user_detail.signals_180d.credit.flag_50_percent %}<span class="badge badge-warning">50%</span>{% endif %}
-                            {% if user_detail.signals_180d.credit.flag_80_percent %}<span class="badge badge-error">80%</span>{% endif %}
-                            {% if user_detail.signals_180d.credit.is_overdue %}<span class="badge badge-error">Overdue</span>{% endif %}
-                            {% if user_detail.signals_180d.credit.minimum_payment_only %}<span class="badge badge-warning">Minimum Payment Only</span>{% endif %}
-                            {% if user_detail.signals_180d.credit.interest_charges_present %}<span class="badge badge-error">Interest Charges</span>{% endif %}
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_180d.credit.flag_30_percent else 'badge-inactive' }}">30%</span>
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_180d.credit.flag_50_percent else 'badge-inactive' }}">50%</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_180d.credit.flag_80_percent else 'badge-inactive' }}">80%</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_180d.credit.is_overdue else 'badge-inactive' }}">Overdue</span>
+                            <span class="badge {{ 'badge-warning' if user_detail.signals_180d.credit.minimum_payment_only else 'badge-inactive' }}">Minimum Payment Only</span>
+                            <span class="badge {{ 'badge-error' if user_detail.signals_180d.credit.interest_charges_present else 'badge-inactive' }}">Interest Charges</span>
                         </li>
                     </ul>
                 </div>
@@ -139,7 +139,7 @@
                     <h5>Income</h5>
                     <ul>
                         <li>Payroll Detected: <strong>{{ "Yes" if user_detail.signals_180d.income.payroll_detected else "No" }}</strong></li>
-                        <li>Payment Frequency: <strong>{{ user_detail.signals_180d.income.payment_frequency or "N/A" }}</strong></li>
+                        <li>Payment Frequency: <strong>{{ (user_detail.signals_180d.income.payment_frequency or "N/A")|title }}</strong></li>
                         <li>Cash Flow Buffer: <strong>{{ "%.1f"|format(user_detail.signals_180d.income.cash_flow_buffer_months) }} months</strong></li>
                     </ul>
                 </div>
@@ -221,7 +221,9 @@
                     <tr>
                         <th>Account ID</th>
                         <th>Type</th>
-                        <th>Balance</th>
+                        <th>Subtype</th>
+                        <th>Current Balance</th>
+                        <th>Available Balance</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -229,7 +231,21 @@
                     <tr>
                         <td><code>{{ account.account_id }}</code></td>
                         <td><span class="badge badge-info">{{ account.type|title }}</span></td>
-                        <td>${{ "%.2f"|format(account.balance) }}</td>
+                        <td>
+                            {% if account.subtype %}
+                                <span class="badge badge-secondary">{{ account.subtype }}</span>
+                            {% else %}
+                                <span class="badge badge-secondary">{{ account.type|title }}</span>
+                            {% endif %}
+                        </td>
+                        <td>${{ "%.2f"|format(account.balance_current) }}</td>
+                        <td>
+                            {% if account.type == "checking" or account.subtype in ["Savings", "Money Market", "HSA"] %}
+                                ${{ "%.2f"|format(account.balance_available) }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -245,6 +261,11 @@
                         <th>Balance</th>
                         <th>Credit Limit</th>
                         <th>Utilization</th>
+                        <th>APR</th>
+                        <th>Min Payment</th>
+                        <th>Last Payment</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -252,11 +273,49 @@
                     <tr>
                         <td><code>{{ cc.account_id }}</code></td>
                         <td>${{ "%.2f"|format(cc.balance) }}</td>
-                        <td>${{ "%.2f"|format(cc.credit_limit) }}</td>
+                        <td>${{ "%.2f"|format(cc.credit_limit) if cc.credit_limit else "N/A" }}</td>
                         <td>
                             <span class="utilization-{{ 'high' if cc.utilization > 50 else ('medium' if cc.utilization > 30 else 'low') }}">
                                 {{ "%.1f"|format(cc.utilization) }}%
                             </span>
+                        </td>
+                        <td>
+                            {% if cc.apr_percentage %}
+                                {{ "%.2f"|format(cc.apr_percentage) }}%
+                                {% if cc.apr_type %}
+                                    <span class="text-muted">({{ cc.apr_type }})</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if cc.minimum_payment_amount %}
+                                ${{ "%.2f"|format(cc.minimum_payment_amount) }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if cc.last_payment_amount %}
+                                ${{ "%.2f"|format(cc.last_payment_amount) }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if cc.next_payment_due_date %}
+                                {{ cc.next_payment_due_date.strftime('%Y-%m-%d') }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if cc.is_overdue %}
+                                <span class="badge badge-error">Overdue</span>
+                            {% else %}
+                                <span class="badge badge-success">Current</span>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}

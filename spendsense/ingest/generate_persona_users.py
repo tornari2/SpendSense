@@ -310,40 +310,28 @@ def _create_persona_profile_with_behaviors(
             )
             if not has_high_util_card:
                 credit_limit = random.uniform(3000, 15000)
-                utilization = random.uniform(0.55, 0.95)
-                balance = credit_limit * utilization
-                
-                credit_card = Account(
-                    account_id=f"{user.user_id}_acct_util",
+                credit_card_data = account_gen.create_account_custom(
                     user_id=user.user_id,
-                    type="credit_card",
-                    subtype="credit_card",
-                    balance_available=credit_limit - balance,
-                    balance_current=balance,
+                    account_type="credit_card",
+                    counter=len(accounts),
                     credit_limit=credit_limit,
-                    iso_currency_code="USD",
-                    holder_category="personal",
-                    created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+                    utilization_range=(0.55, 0.95),
+                    account_id_suffix="util"
                 )
-                accounts.append(credit_card)
+                accounts.append(Account(**credit_card_data))
         
         elif multi_persona_overlay == "subscription_heavy":
             # Ensure checking account exists (subscriptions will be added via transactions)
             has_checking = any(a.type == "checking" for a in accounts)
             if not has_checking:
-                checking = Account(
-                    account_id=f"{user.user_id}_acct_checking",
+                checking_data = account_gen.create_account_custom(
                     user_id=user.user_id,
-                    type="checking",
-                    subtype="checking",
-                    balance_available=random.uniform(1000, 5000),
-                    balance_current=random.uniform(1000, 5000),
-                    credit_limit=None,
-                    iso_currency_code="USD",
-                    holder_category="personal",
-                    created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+                    account_type="checking",
+                    counter=0,
+                    balance_range=(1000, 5000),
+                    account_id_suffix="checking"
                 )
-                accounts.insert(0, checking)
+                accounts.insert(0, Account(**checking_data))
         
         elif multi_persona_overlay == "variable_income":
             # Ensure low cash buffer
@@ -359,37 +347,27 @@ def _create_persona_profile_with_behaviors(
             # Add savings account if not present
             has_savings = any(a.type == "savings" for a in accounts)
             if not has_savings:
-                savings = Account(
-                    account_id=f"{user.user_id}_acct_savings",
+                savings_data = account_gen.create_account_custom(
                     user_id=user.user_id,
-                    type="savings",
-                    subtype="savings",
-                    balance_available=random.uniform(3000, 20000),
-                    balance_current=random.uniform(3000, 20000),
-                    credit_limit=None,
-                    iso_currency_code="USD",
-                    holder_category="personal",
-                    created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+                    account_type="savings",
+                    counter=len(accounts),
+                    balance_range=(3000, 20000),
+                    account_id_suffix="savings"
                 )
-                accounts.append(savings)
+                accounts.append(Account(**savings_data))
         
         elif multi_persona_overlay == "lifestyle_inflator":
             # Ensure savings account exists (will be flat in transactions)
             has_savings = any(a.type == "savings" for a in accounts)
             if not has_savings:
-                savings = Account(
-                    account_id=f"{user.user_id}_acct_savings",
+                savings_data = account_gen.create_account_custom(
                     user_id=user.user_id,
-                    type="savings",
-                    subtype="savings",
-                    balance_available=random.uniform(1000, 5000),
-                    balance_current=random.uniform(1000, 5000),
-                    credit_limit=None,
-                    iso_currency_code="USD",
-                    holder_category="personal",
-                    created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+                    account_type="savings",
+                    counter=len(accounts),
+                    balance_range=(1000, 5000),
+                    account_id_suffix="savings"
                 )
-                accounts.append(savings)
+                accounts.append(Account(**savings_data))
     
     # Ensure at least 3 behaviors are present
     # Behaviors are validated through transactions, but we ensure account structure supports them
@@ -412,70 +390,54 @@ def _create_high_utilization_profile(user, account_gen, transaction_gen, liabili
     accounts = []
     
     # Checking account
-    checking = Account(
-        account_id=f"{user.user_id}_acct_000",
+    checking_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="checking",
-        subtype="checking",
-        balance_available=random.uniform(500, 2000),
-        balance_current=random.uniform(500, 2000),
-        credit_limit=None,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        account_type="checking",
+        counter=0,
+        balance_range=(500, 2000),
+        account_id_suffix="000"
     )
-    accounts.append(checking)
+    accounts.append(Account(**checking_data))
     
     # Credit card configuration based on reason
     credit_limit = random.uniform(3000, 15000)
     
     if high_util_reason == "utilization_50":
         # High utilization (50-95%)
-        utilization = random.uniform(0.55, 0.95)
+        utilization_range = (0.55, 0.95)
     elif high_util_reason == "interest_charges":
         # Lower utilization (<50%) so interest charges are the primary reason
-        utilization = random.uniform(0.25, 0.45)
+        utilization_range = (0.25, 0.45)
     elif high_util_reason == "minimum_payment_only":
         # Lower utilization (<50%) so minimum payments are the primary reason
-        utilization = random.uniform(0.25, 0.45)
+        utilization_range = (0.25, 0.45)
     elif high_util_reason == "is_overdue":
         # Lower utilization (<50%) so overdue status is the primary reason
-        utilization = random.uniform(0.25, 0.45)
+        utilization_range = (0.25, 0.45)
     else:
         # Default: high utilization
-        utilization = random.uniform(0.55, 0.95)
+        utilization_range = (0.55, 0.95)
     
-    balance = credit_limit * utilization
-    
-    credit_card = Account(
-        account_id=f"{user.user_id}_acct_001",
+    credit_card_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="credit_card",
-        subtype="credit_card",
-        balance_available=credit_limit - balance,
-        balance_current=balance,
+        account_type="credit_card",
+        counter=1,
         credit_limit=credit_limit,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        utilization_range=utilization_range,
+        account_id_suffix="001"
     )
-    accounts.append(credit_card)
+    accounts.append(Account(**credit_card_data))
     
     # Optional: Small savings account (low balance) - shows savings behavior but poor
     if random.random() < 0.4:
-        savings = Account(
-            account_id=f"{user.user_id}_acct_002",
+        savings_data = account_gen.create_account_custom(
             user_id=user.user_id,
-            type="savings",
-            subtype="savings",
-            balance_available=random.uniform(100, 1000),
-            balance_current=random.uniform(100, 1000),
-            credit_limit=None,
-            iso_currency_code="USD",
-            holder_category="personal",
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+            account_type="savings",
+            counter=2,
+            balance_range=(100, 1000),
+            account_id_suffix="002"
         )
-        accounts.append(savings)
+        accounts.append(Account(**savings_data))
     
     return accounts
 
@@ -501,55 +463,38 @@ def _create_variable_income_profile(user, account_gen, transaction_gen, liabilit
     buffer_multiplier = random.uniform(0.2, 0.8)  # Less than 1 month
     checking_balance = monthly_expenses * buffer_multiplier
     
-    checking = Account(
-        account_id=f"{user.user_id}_acct_000",
+    checking_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="checking",
-        subtype="checking",
-        balance_available=checking_balance,
-        balance_current=checking_balance,
-        credit_limit=None,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        account_type="checking",
+        counter=0,
+        balance_range=(checking_balance * 0.95, checking_balance * 1.05),  # Small range around target
+        account_id_suffix="000"
     )
-    accounts.append(checking)
+    accounts.append(Account(**checking_data))
     
     # Optional savings but small (low emergency fund)
     if random.random() < 0.6:
-        savings = Account(
-            account_id=f"{user.user_id}_acct_001",
+        savings_data = account_gen.create_account_custom(
             user_id=user.user_id,
-            type="savings",
-            subtype="savings",
-            balance_available=random.uniform(500, 2000),
-            balance_current=random.uniform(500, 2000),
-            credit_limit=None,
-            iso_currency_code="USD",
-            holder_category="personal",
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+            account_type="savings",
+            counter=1,
+            balance_range=(500, 2000),
+            account_id_suffix="001"
         )
-        accounts.append(savings)
+        accounts.append(Account(**savings_data))
     
     # Optional credit card (may use to smooth income) - low utilization
     if random.random() < 0.7:
         credit_limit = random.uniform(3000, 10000)
-        utilization = random.uniform(0.1, 0.4)  # Low to moderate
-        balance = credit_limit * utilization
-        
-        credit_card = Account(
-            account_id=f"{user.user_id}_acct_002",
+        credit_card_data = account_gen.create_account_custom(
             user_id=user.user_id,
-            type="credit_card",
-            subtype="credit_card",
-            balance_available=credit_limit - balance,
-            balance_current=balance,
+            account_type="credit_card",
+            counter=2,
             credit_limit=credit_limit,
-            iso_currency_code="USD",
-            holder_category="personal",
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+            utilization_range=(0.1, 0.4),  # Low to moderate
+            account_id_suffix="002"
         )
-        accounts.append(credit_card)
+        accounts.append(Account(**credit_card_data))
     
     return accounts
 
@@ -570,55 +515,38 @@ def _create_subscription_heavy_profile(user, account_gen, transaction_gen, liabi
     accounts = []
     
     # Checking account (will have many subscriptions)
-    checking = Account(
-        account_id=f"{user.user_id}_acct_000",
+    checking_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="checking",
-        subtype="checking",
-        balance_available=random.uniform(1000, 5000),
-        balance_current=random.uniform(1000, 5000),
-        credit_limit=None,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        account_type="checking",
+        counter=0,
+        balance_range=(1000, 5000),
+        account_id_suffix="000"
     )
-    accounts.append(checking)
+    accounts.append(Account(**checking_data))
     
     # Optional credit card (for some subscriptions) - low utilization
     if random.random() < 0.6:
         credit_limit = random.uniform(5000, 20000)
-        utilization = random.uniform(0.1, 0.4)  # Low to moderate utilization
-        balance = credit_limit * utilization
-        
-        credit_card = Account(
-            account_id=f"{user.user_id}_acct_001",
+        credit_card_data = account_gen.create_account_custom(
             user_id=user.user_id,
-            type="credit_card",
-            subtype="credit_card",
-            balance_available=credit_limit - balance,
-            balance_current=balance,
+            account_type="credit_card",
+            counter=1,
             credit_limit=credit_limit,
-            iso_currency_code="USD",
-            holder_category="personal",
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+            utilization_range=(0.1, 0.4),  # Low to moderate utilization
+            account_id_suffix="001"
         )
-        accounts.append(credit_card)
+        accounts.append(Account(**credit_card_data))
     
     # Optional savings account (may have savings but not actively building)
     if random.random() < 0.5:
-        savings = Account(
-            account_id=f"{user.user_id}_acct_002",
+        savings_data = account_gen.create_account_custom(
             user_id=user.user_id,
-            type="savings",
-            subtype="savings",
-            balance_available=random.uniform(1000, 5000),
-            balance_current=random.uniform(1000, 5000),
-            credit_limit=None,
-            iso_currency_code="USD",
-            holder_category="personal",
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+            account_type="savings",
+            counter=2,
+            balance_range=(1000, 5000),
+            account_id_suffix="002"
         )
-        accounts.append(savings)
+        accounts.append(Account(**savings_data))
     
     return accounts
 
@@ -639,58 +567,41 @@ def _create_savings_builder_profile(user, account_gen, transaction_gen, liabilit
     accounts = []
     
     # Checking account
-    checking = Account(
-        account_id=f"{user.user_id}_acct_000",
+    checking_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="checking",
-        subtype="checking",
-        balance_available=random.uniform(2000, 8000),
-        balance_current=random.uniform(2000, 8000),
-        credit_limit=None,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        account_type="checking",
+        counter=0,
+        balance_range=(2000, 8000),
+        account_id_suffix="000"
     )
-    accounts.append(checking)
+    accounts.append(Account(**checking_data))
     
     # Savings account with GROWTH
     # Use a reasonable starting balance to enable growth rate calculation
     savings_balance = random.uniform(5000, 30000)
-    savings = Account(
-        account_id=f"{user.user_id}_acct_001",
+    savings_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="savings",
-        subtype="savings",
-        balance_available=savings_balance,
-        balance_current=savings_balance,
-        credit_limit=None,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        account_type="savings",
+        counter=1,
+        balance_range=(savings_balance * 0.95, savings_balance * 1.05),  # Small range around target
+        account_id_suffix="001"
     )
-    accounts.append(savings)
+    accounts.append(Account(**savings_data))
     
     # Optional credit card with LOW utilization (<30%) if present
     # If user has credit cards, all must be < 30% utilization
     # If user has NO credit cards, condition is trivially met
     if random.random() < 0.7:
         credit_limit = random.uniform(5000, 20000)
-        utilization = random.uniform(0.05, 0.25)  # Below 30% threshold (5-25%)
-        balance = credit_limit * utilization
-        
-        credit_card = Account(
-            account_id=f"{user.user_id}_acct_002",
+        credit_card_data = account_gen.create_account_custom(
             user_id=user.user_id,
-            type="credit_card",
-            subtype="credit_card",
-            balance_available=credit_limit - balance,
-            balance_current=balance,
+            account_type="credit_card",
+            counter=2,
             credit_limit=credit_limit,
-            iso_currency_code="USD",
-            holder_category="personal",
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+            utilization_range=(0.05, 0.25),  # Below 30% threshold (5-25%)
+            account_id_suffix="002"
         )
-        accounts.append(credit_card)
+        accounts.append(Account(**credit_card_data))
     
     return accounts
 
@@ -724,55 +635,38 @@ def _create_lifestyle_inflator_profile(user, account_gen, transaction_gen, liabi
     buffer_multiplier = random.uniform(1.2, 2.5)  # 1.2-2.5 months buffer
     checking_balance = monthly_expenses * buffer_multiplier
     
-    checking = Account(
-        account_id=f"{user.user_id}_acct_000",
+    checking_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="checking",
-        subtype="checking",
-        balance_available=checking_balance,
-        balance_current=checking_balance,
-        credit_limit=None,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        account_type="checking",
+        counter=0,
+        balance_range=(checking_balance * 0.95, checking_balance * 1.05),  # Small range around target
+        account_id_suffix="000"
     )
-    accounts.append(checking)
+    accounts.append(Account(**checking_data))
     
     # Savings account (flat or minimal growth - savings rate stays flat)
     savings_balance = random.uniform(2000, 8000)
-    savings = Account(
-        account_id=f"{user.user_id}_acct_001",
+    savings_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="savings",
-        subtype="savings",
-        balance_available=savings_balance,
-        balance_current=savings_balance,
-        credit_limit=None,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        account_type="savings",
+        counter=1,
+        balance_range=(savings_balance * 0.95, savings_balance * 1.05),  # Small range around target
+        account_id_suffix="001"
     )
-    accounts.append(savings)
+    accounts.append(Account(**savings_data))
     
     # Credit card with LOW utilization (<50% to avoid Persona 1)
     # This ensures Persona 5 won't be overridden by Persona 1
     credit_limit = random.uniform(5000, 20000)
-    utilization = random.uniform(0.05, 0.45)  # Below 50% threshold
-    balance = credit_limit * utilization
-    
-    credit_card = Account(
-        account_id=f"{user.user_id}_acct_002",
+    credit_card_data = account_gen.create_account_custom(
         user_id=user.user_id,
-        type="credit_card",
-        subtype="credit_card",
-        balance_available=credit_limit - balance,
-        balance_current=balance,
+        account_type="credit_card",
+        counter=2,
         credit_limit=credit_limit,
-        iso_currency_code="USD",
-        holder_category="personal",
-        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+        utilization_range=(0.05, 0.45),  # Below 50% threshold
+        account_id_suffix="002"
     )
-    accounts.append(credit_card)
+    accounts.append(Account(**credit_card_data))
     
     return accounts
 

@@ -125,14 +125,19 @@ class SyntheticUserGenerator:
 class SyntheticAccountGenerator:
     """Generate synthetic bank accounts for users."""
     
+    # Three main account types: checking, savings, credit_card
     ACCOUNT_TYPES = {
         "checking": {"weight": 1.0, "has_limit": False},  # Everyone has checking
-        "savings": {"weight": 0.6, "has_limit": False},
+        "savings": {"weight": 0.6, "has_limit": False},  # Savings accounts (includes subtypes)
         "credit_card": {"weight": 0.8, "has_limit": True},
-        "money_market": {"weight": 0.15, "has_limit": False},
-        "hsa": {"weight": 0.20, "has_limit": False},
-        "mortgage": {"weight": 0.35, "has_limit": False},  # 35% of users have mortgages
-        "student_loan": {"weight": 0.25, "has_limit": False},  # 25% of users have student loans
+    }
+    
+    # Savings account subtypes (all have type="savings" for behavioral detection)
+    SAVINGS_SUBTYPES = ["Savings", "Money Market", "HSA"]
+    SAVINGS_SUBTYPE_WEIGHTS = {
+        "Savings": 0.7,      # 70% chance of regular savings
+        "Money Market": 0.2,  # 20% chance of money market
+        "HSA": 0.1            # 10% chance of HSA
     }
     
     def generate_accounts_for_user(self, user_id: str, credit_score: int) -> List[Dict]:
@@ -162,6 +167,15 @@ class SyntheticAccountGenerator:
                         )
                         accounts.append(account)
                         account_counter += 1
+                elif account_type == "savings":
+                    # For savings accounts, randomly assign a subtype
+                    # but type is always "savings" for behavioral detection
+                    subtype = self._select_savings_subtype()
+                    account = self._create_account(
+                        user_id, account_type, account_counter, credit_score, subtype=subtype
+                    )
+                    accounts.append(account)
+                    account_counter += 1
                 else:
                     account = self._create_account(
                         user_id, account_type, account_counter, credit_score
@@ -170,6 +184,19 @@ class SyntheticAccountGenerator:
                     account_counter += 1
         
         return accounts
+    
+    def _select_savings_subtype(self) -> str:
+        """Select a savings account subtype based on weights."""
+        rand = random.random()
+        cumulative = 0.0
+        
+        for subtype, weight in self.SAVINGS_SUBTYPE_WEIGHTS.items():
+            cumulative += weight
+            if rand <= cumulative:
+                return subtype
+        
+        # Fallback to "Savings" if something goes wrong
+        return "Savings"
     
     def _determine_credit_card_count(self, credit_score: int) -> int:
         """Determine number of credit cards based on credit score."""
@@ -181,56 +208,67 @@ class SyntheticAccountGenerator:
             return random.choice([1, 1, 1, 2])  # Mostly 1 card
     
     def _create_account(
-        self, user_id: str, account_type: str, counter: int, credit_score: int
+        self, user_id: str, account_type: str, counter: int, credit_score: int, subtype: str = None
     ) -> Dict:
-        """Create a single account with realistic balances."""
+        """
+        Create a single account with realistic balances.
+        
+        Args:
+            user_id: User identifier
+            account_type: Main account type (checking, savings, credit_card)
+            counter: Account counter for ID generation
+            credit_score: Credit score (for credit cards)
+            subtype: Optional subtype (for savings accounts: "Savings", "Money Market", "HSA")
+        """
         account_id = f"{user_id}_acct_{counter:03d}"
         
-        # Generate balance based on account type
+        # Determine subtype based on account type
         if account_type == "checking":
+            final_subtype = "checking"
             balance = random.uniform(500, 15000)
             available = balance
             limit = None
             
         elif account_type == "savings":
-            balance = random.uniform(1000, 50000)
+            # Use provided subtype or select randomly
+            if subtype:
+                final_subtype = subtype
+            else:
+                final_subtype = self._select_savings_subtype()
+            
+            # Generate balance based on subtype
+            if final_subtype == "Savings":
+                balance = random.uniform(1000, 50000)
+            elif final_subtype == "Money Market":
+                balance = random.uniform(5000, 100000)
+            elif final_subtype == "HSA":
+                balance = random.uniform(500, 10000)
+            else:
+                balance = random.uniform(1000, 50000)  # Default
+            
             available = balance
             limit = None
             
         elif account_type == "credit_card":
+            final_subtype = "credit_card"
             limit = self._determine_credit_limit(credit_score)
             # Balance is current debt (what they owe)
             utilization = random.uniform(0, 0.9)  # 0-90% utilization
             balance = limit * utilization
             available = limit - balance
-            
-        elif account_type == "money_market":
-            balance = random.uniform(5000, 100000)
-            available = balance
-            limit = None
-            
-        elif account_type == "hsa":
+        
+        else:
+            # Unknown account type - use defaults
+            final_subtype = account_type
             balance = random.uniform(500, 10000)
-            available = balance
-            limit = None
-        
-        elif account_type == "mortgage":
-            # Mortgage balance (remaining principal)
-            balance = random.uniform(50000, 500000)  # Typical mortgage range
-            available = balance
-            limit = None
-        
-        elif account_type == "student_loan":
-            # Student loan balance
-            balance = random.uniform(10000, 150000)  # Typical student loan range
             available = balance
             limit = None
         
         return {
             "account_id": account_id,
             "user_id": user_id,
-            "type": account_type,
-            "subtype": account_type,
+            "type": account_type,  # Always checking, savings, or credit_card
+            "subtype": final_subtype,  # Specific subtype (checking, Savings/Money Market/HSA, credit_card)
             "balance_available": available,
             "balance_current": balance,
             "credit_limit": limit,
@@ -251,6 +289,119 @@ class SyntheticAccountGenerator:
             return random.uniform(2000, 8000)
         else:
             return random.uniform(500, 3000)
+    
+    def create_account_custom(
+        self,
+        user_id: str,
+        account_type: str,
+        counter: int,
+        credit_score: int = None,
+        balance_range: Tuple[float, float] = None,
+        credit_limit: float = None,
+        utilization_range: Tuple[float, float] = None,
+        account_id_suffix: str = None,
+        subtype: str = None
+    ) -> Dict:
+        """
+        Create a single account with custom parameters for persona-specific needs.
+        
+        Args:
+            user_id: User identifier
+            account_type: Type of account (checking, savings, credit_card)
+            counter: Account counter for ID generation
+            credit_score: Optional credit score (used if credit_limit not provided)
+            balance_range: Optional tuple (min, max) for balance range. If None, uses defaults.
+            credit_limit: Optional specific credit limit (for credit cards). If None, calculates from credit_score.
+            utilization_range: Optional tuple (min, max) for credit card utilization (0.0-1.0)
+            account_id_suffix: Optional suffix for account_id (e.g., "000", "001", "util")
+            subtype: Optional subtype. For savings: "Savings", "Money Market", "HSA". 
+                    For checking: "checking". For credit_card: "credit_card".
+                    If None, defaults are used (random for savings)
+        
+        Returns:
+            Account dict with type and subtype properly set
+        """
+        if account_id_suffix:
+            account_id = f"{user_id}_acct_{account_id_suffix}"
+        else:
+            account_id = f"{user_id}_acct_{counter:03d}"
+        
+        # Determine subtype
+        if account_type == "checking":
+            final_subtype = subtype if subtype else "checking"
+            if balance_range:
+                balance = random.uniform(balance_range[0], balance_range[1])
+            else:
+                balance = random.uniform(500, 15000)
+            available = balance
+            limit = None
+            
+        elif account_type == "savings":
+            # Use provided subtype or select randomly
+            if subtype:
+                final_subtype = subtype
+            else:
+                final_subtype = self._select_savings_subtype()
+            
+            # Generate balance based on subtype and balance_range
+            if balance_range:
+                balance = random.uniform(balance_range[0], balance_range[1])
+            else:
+                # Use subtype-specific defaults if no range provided
+                if final_subtype == "Savings":
+                    balance = random.uniform(1000, 50000)
+                elif final_subtype == "Money Market":
+                    balance = random.uniform(5000, 100000)
+                elif final_subtype == "HSA":
+                    balance = random.uniform(500, 10000)
+                else:
+                    balance = random.uniform(1000, 50000)  # Default
+            
+            available = balance
+            limit = None
+            
+        elif account_type == "credit_card":
+            final_subtype = subtype if subtype else "credit_card"
+            # Determine credit limit
+            if credit_limit is not None:
+                limit = credit_limit
+            elif credit_score is not None:
+                limit = self._determine_credit_limit(credit_score)
+            else:
+                # Default if neither provided
+                limit = random.uniform(3000, 15000)
+            
+            # Determine utilization
+            if utilization_range:
+                utilization = random.uniform(utilization_range[0], utilization_range[1])
+            else:
+                utilization = random.uniform(0, 0.9)  # Default 0-90%
+            
+            balance = limit * utilization
+            available = limit - balance
+        
+        else:
+            # Unknown account type - use defaults
+            final_subtype = subtype if subtype else account_type
+            if balance_range:
+                balance = random.uniform(balance_range[0], balance_range[1])
+            else:
+                balance = random.uniform(500, 10000)
+            available = balance
+            limit = None
+        
+        return {
+            "account_id": account_id,
+            "user_id": user_id,
+            "type": account_type,  # Always checking, savings, or credit_card
+            "subtype": final_subtype,  # Specific subtype
+            "balance_available": available,
+            "balance_current": balance,
+            "credit_limit": limit,
+            "iso_currency_code": "USD",
+            "holder_category": "personal",
+            "created_at": datetime.utcnow() - timedelta(days=random.randint(365, 1825))
+        }
 
 
 class SyntheticTransactionGenerator:

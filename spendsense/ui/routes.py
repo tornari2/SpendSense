@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 import json
 
 from spendsense.ingest.database import get_session
-from spendsense.ingest.schema import User, Recommendation, PersonaHistory, DecisionTrace, Account
+from spendsense.ingest.schema import User, Recommendation, PersonaHistory, DecisionTrace, Account, Liability
 from spendsense.features.signals import calculate_signals
 from spendsense.personas.assignment import assign_persona
 from spendsense.guardrails.disclosure import append_disclosure
@@ -305,6 +305,16 @@ def user_detail_page(
     # Get accounts
     accounts = session.query(Account).filter(Account.user_id == user_id).all()
     
+    # Get liabilities for credit cards
+    credit_account_ids = [acc.account_id for acc in accounts if acc.type == "credit_card"]
+    liabilities = {}
+    if credit_account_ids:
+        liability_records = session.query(Liability).filter(
+            Liability.account_id.in_(credit_account_ids)
+        ).all()
+        for liability in liability_records:
+            liabilities[liability.account_id] = liability
+    
     # Build account summary
     account_summary = {
         "total_accounts": len(accounts),
@@ -321,11 +331,19 @@ def user_detail_page(
         account_summary["accounts_by_type"][account_type] += 1
         
         if account.type == "credit_card":
+            # Get liability information for this credit card
+            liability = liabilities.get(account.account_id)
             account_summary["credit_cards"].append({
                 "account_id": account.account_id,
                 "balance": account.balance_current,
                 "credit_limit": account.credit_limit,
-                "utilization": (account.balance_current / account.credit_limit * 100) if account.credit_limit else 0
+                "utilization": (account.balance_current / account.credit_limit * 100) if account.credit_limit and account.credit_limit > 0 else 0,
+                "apr_percentage": liability.apr_percentage if liability else None,
+                "apr_type": liability.apr_type if liability else None,
+                "minimum_payment_amount": liability.minimum_payment_amount if liability else None,
+                "last_payment_amount": liability.last_payment_amount if liability else None,
+                "is_overdue": liability.is_overdue if liability else False,
+                "next_payment_due_date": liability.next_payment_due_date if liability else None
             })
         else:
             # Deposit accounts (checking, savings, money_market, hsa, etc.)
@@ -333,7 +351,9 @@ def user_detail_page(
             account_summary["deposit_accounts"].append({
                 "account_id": account.account_id,
                 "type": account.type,
-                "balance": account.balance_current or 0
+                "subtype": account.subtype,  # Include subtype for display
+                "balance_current": account.balance_current or 0,
+                "balance_available": account.balance_available or 0
             })
     
     # Build recommendations list
