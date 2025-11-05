@@ -22,6 +22,7 @@ from spendsense.personas.assignment import assign_persona, PersonaAssignment
 from spendsense.features.signals import calculate_signals, SignalSet
 from spendsense.ingest.schema import User, Account, Liability, Recommendation, DecisionTrace as DecisionTraceModel
 from spendsense.ingest.database import get_session
+from spendsense.guardrails.consent import check_consent
 
 from .templates import get_templates_for_persona, render_template, EducationTemplate
 from .offers import get_offers_for_persona, PartnerOffer
@@ -82,6 +83,7 @@ def generate_recommendations(
         signals_30d, signals_180d = calculate_signals(user_id, session=session)
         
         # Assign persona (30-day persona drives recommendations)
+        # Note: Personas are assigned regardless of consent status
         persona_assignment_30d, persona_assignment_180d = assign_persona(
             user_id=user_id,
             signals_30d=signals_30d,
@@ -90,8 +92,23 @@ def generate_recommendations(
             save_history=True
         )
         
-        # If no persona assigned, return empty list
-        if not persona_assignment_30d.persona_id:
+        # Determine primary persona for recommendations:
+        # 1. Use 30-day window persona if available
+        # 2. If 30-day window has no persona, fall back to 180-day window persona
+        primary_persona_assignment = persona_assignment_30d
+        if not persona_assignment_30d.persona_id and persona_assignment_180d.persona_id:
+            # Use 180d persona as primary if no 30d persona exists
+            primary_persona_assignment = persona_assignment_180d
+        
+        # If still no persona assigned, return empty list
+        if not primary_persona_assignment.persona_id:
+            return []
+        
+        # Check consent BEFORE generating recommendations
+        # Non-consented users should have personas assigned but NO recommendations saved
+        has_consent, _ = check_consent(user_id, session)
+        if not has_consent:
+            # Return empty list - don't generate or save recommendations for non-consented users
             return []
         
         # Fetch accounts and liabilities
@@ -105,10 +122,10 @@ def generate_recommendations(
         
         recommendations = []
         
-        # Generate education recommendations
+        # Generate education recommendations using primary persona
         education_recs = _generate_education_recommendations(
             user_id=user_id,
-            persona_assignment=persona_assignment_30d,
+            persona_assignment=primary_persona_assignment,
             signals_30d=signals_30d,
             signals_180d=signals_180d,
             accounts=accounts,
@@ -117,11 +134,11 @@ def generate_recommendations(
         )
         recommendations.extend(education_recs)
         
-        # Generate partner offer recommendations
+        # Generate partner offer recommendations using primary persona
         offer_recs = _generate_offer_recommendations(
             user_id=user_id,
             user=user,
-            persona_assignment=persona_assignment_30d,
+            persona_assignment=primary_persona_assignment,
             signals_30d=signals_30d,
             signals_180d=signals_180d,
             accounts=accounts,
@@ -467,9 +484,39 @@ def _extract_template_variables(
 
 
 def _save_recommendations(recommendations: List[GeneratedRecommendation], session: Session):
-    """Save recommendations and decision traces to database."""
+    """
+    Save recommendations and decision traces to database.
+    
+    Before saving new recommendations, deletes all existing pending recommendations
+    for the user to ensure only one set of recommendations exists at a time.
+    Approved/rejected/flagged recommendations are preserved (they've been reviewed).
+    """
     import json
     
+    if not recommendations:
+        return
+    
+    # Get user_id from first recommendation (all should be for same user)
+    user_id = recommendations[0].user_id
+    
+    # Delete existing pending recommendations for this user
+    # This ensures we only have one set of recommendations at a time
+    # Keep approved/rejected/flagged ones as they've been reviewed
+    existing_pending = session.query(Recommendation).filter(
+        Recommendation.user_id == user_id,
+        Recommendation.status == 'pending'
+    ).all()
+    
+    for existing_rec in existing_pending:
+        # Delete associated decision trace (cascade delete should handle this, but explicit is safer)
+        trace = session.query(DecisionTraceModel).filter(
+            DecisionTraceModel.recommendation_id == existing_rec.recommendation_id
+        ).first()
+        if trace:
+            session.delete(trace)
+        session.delete(existing_rec)
+    
+    # Now save the new recommendations
     for rec in recommendations:
         # Create Recommendation record
         recommendation = Recommendation(

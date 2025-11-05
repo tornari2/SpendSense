@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Review Recommendations - SpendSense{% endblock %}
+
+{% block content %}
+<div class="review-page">
+    <h2>Recommendation Review Queue</h2>
+    
+    <div class="filters">
+        <form method="get" action="/review" class="filter-form">
+            <div class="form-group">
+                <label for="status">Status:</label>
+                <select id="status" name="status">
+                    <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending</option>
+                    <option value="flagged" {% if status_filter == "flagged" %}selected{% endif %}>Flagged</option>
+                    <option value="approved" {% if status_filter == "approved" %}selected{% endif %}>Approved</option>
+                    <option value="rejected" {% if status_filter == "rejected" %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </form>
+    </div>
+    
+    {% if recommendations %}
+        {% for rec in recommendations %}
+        <div class="recommendation-review-card">
+            <div class="review-header">
+                <div class="review-meta">
+                    <h3>{{ rec.type|title }} Recommendation</h3>
+                    <p>
+                        <strong>User:</strong> <a href="/users/{{ rec.user_id }}">{{ rec.user_id }}</a> |
+                        <strong>Status:</strong> <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span> |
+                        <strong>Persona:</strong> {{ rec.persona or "N/A" }} |
+                        <strong>Created:</strong> {{ rec.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </p>
+                </div>
+            </div>
+            
+            <div class="review-content">
+                <h4>Content:</h4>
+                <div class="content-box">{{ rec.content|safe }}</div>
+                
+                <h4>⭐ Rationale:</h4>
+                <div class="rationale-box">{{ rec.rationale }}</div>
+                
+                <!-- Decision Trace - CRITICAL REQUIREMENT -->
+                {% if rec.decision_trace %}
+                <details class="decision-trace">
+                    <summary><strong>⭐ Decision Trace (Why this recommendation was made)</strong></summary>
+                    <div class="trace-content">
+                        <h5>Input Signals Used:</h5>
+                        <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
+                        
+                        <h5>Persona Assignment:</h5>
+                        <p><strong>Persona:</strong> {{ rec.decision_trace.persona_assigned }}</p>
+                        <p><strong>Reasoning:</strong> {{ rec.decision_trace.persona_reasoning }}</p>
+                        
+                        <h5>Template Used:</h5>
+                        <p>{{ rec.decision_trace.template_used }}</p>
+                        
+                        <h5>Variables Inserted:</h5>
+                        <pre>{{ rec.decision_trace.variables_inserted|tojson }}</pre>
+                        
+                        <h5>Eligibility Checks:</h5>
+                        <pre>{{ rec.decision_trace.eligibility_checks|tojson }}</pre>
+                        
+                        <h5>Metadata:</h5>
+                        <p><strong>Timestamp:</strong> {{ rec.decision_trace.timestamp }}</p>
+                        <p><strong>Version:</strong> {{ rec.decision_trace.version }}</p>
+                    </div>
+                </details>
+                {% endif %}
+                
+                <!-- Review Actions - CRITICAL REQUIREMENT -->
+                <div class="review-actions">
+                    {% if rec.status == "pending" or rec.status == "flagged" %}
+                    <!-- Approve Button -->
+                    <form method="post" action="/approve/{{ rec.recommendation_id }}" class="action-form">
+                        <div class="form-group">
+                            <label for="notes_{{ rec.recommendation_id }}">Notes (optional):</label>
+                            <input type="text" id="notes_{{ rec.recommendation_id }}" name="notes" placeholder="Optional notes">
+                        </div>
+                        <button type="submit" class="btn btn-success">⭐ Approve</button>
+                    </form>
+                    
+                    <!-- Override/Reject Button -->
+                    <form method="post" action="/override/{{ rec.recommendation_id }}" class="action-form">
+                        <div class="form-group">
+                            <label for="reason_{{ rec.recommendation_id }}">Reason (required):</label>
+                            <input type="text" id="reason_{{ rec.recommendation_id }}" name="reason" required placeholder="Reason for override">
+                        </div>
+                        <button type="submit" class="btn btn-danger">⭐ Override/Reject</button>
+                    </form>
+                    
+                    <!-- Flag Button -->
+                    <form method="post" action="/flag/{{ rec.recommendation_id }}" class="action-form">
+                        <div class="form-group">
+                            <label for="flag_reason_{{ rec.recommendation_id }}">Flag Reason (required):</label>
+                            <input type="text" id="flag_reason_{{ rec.recommendation_id }}" name="reason" required placeholder="Reason for flagging">
+                        </div>
+                        <button type="submit" class="btn btn-warning">⭐ Flag for Review</button>
+                    </form>
+                    {% endif %}
+                    
+                    <a href="/recommendation/{{ rec.recommendation_id }}" class="btn btn-secondary">View Full Details</a>
+                    <a href="/users/{{ rec.user_id }}" class="btn btn-secondary">View User</a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="empty-state">No recommendations found with status: {{ status_filter }}</p>
+    {% endif %}
+</div>
+{% endblock %}
+

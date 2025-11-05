@@ -205,7 +205,12 @@ def _calculate_signals_for_window(
     savings_transactions = [t for t in window_transactions if t.account_id in savings_account_ids]
     
     # Calculate subscription signals
-    subscription_signals = detect_subscriptions(window_transactions, window_days)
+    # Always pass all_transactions for 90-day lookback (consistent across all windows)
+    subscription_signals = detect_subscriptions(
+        window_transactions, 
+        window_days,
+        all_transactions=all_transactions
+    )
     
     # Calculate savings signals
     savings_signals = calculate_savings_behavior(
@@ -230,14 +235,27 @@ def _calculate_signals_for_window(
         window_days=window_days
     )
     
-    # Calculate lifestyle signals (only for 180-day window)
-    lifestyle_signals = None
-    if window_days >= 180:
+    # Calculate lifestyle signals
+    # For 30-day window, use 90-day lookback (similar to subscriptions)
+    # For 180-day window, use the full window
+    if window_days == 30:
+        # Use 90-day lookback for lifestyle signals when calculating 30-day window
+        lookback_transactions = filter_transactions_by_window(all_transactions, 90)
+        lookback_savings = [t for t in lookback_transactions if t.account_id in savings_account_ids]
+        lifestyle_signals = detect_lifestyle_inflation(
+            transactions_180d=lookback_transactions,
+            savings_transactions_180d=lookback_savings,
+            window_days=90  # Use 90-day period for calculation
+        )
+    elif window_days >= 180:
+        # Use full 180-day window for lifestyle signals
         lifestyle_signals = detect_lifestyle_inflation(
             transactions_180d=window_transactions,
             savings_transactions_180d=savings_transactions,
             window_days=window_days
         )
+    else:
+        lifestyle_signals = None
     
     return SignalSet(
         user_id=user_id,

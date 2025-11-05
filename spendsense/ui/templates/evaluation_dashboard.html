@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Evaluation Dashboard - SpendSense{% endblock %}
+
+{% block content %}
+<div class="evaluation-dashboard">
+    <h2>Evaluation Metrics Dashboard</h2>
+    
+    <div class="metrics-grid">
+        <!-- Coverage Metric -->
+        <div class="metric-card">
+            <h3>Coverage</h3>
+            <div class="metric-value">{{ "%.1f"|format(metrics.coverage.coverage_percent) }}%</div>
+            <div class="metric-label">
+                {{ metrics.coverage.users_with_both }} / {{ metrics.coverage.total_users }} users
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill {% if metrics.coverage.coverage_percent < 100 %}warning{% endif %}" 
+                     style="width: {{ metrics.coverage.coverage_percent }}%"></div>
+            </div>
+            <details>
+                <summary>Details</summary>
+                <ul>
+                    <li>Users with persona: {{ metrics.coverage.users_with_persona }}</li>
+                    <li>Users with 3+ signals: {{ metrics.coverage.users_with_3_signals }}</li>
+                    <li>Users with both: {{ metrics.coverage.users_with_both }}</li>
+                </ul>
+            </details>
+        </div>
+        
+        <!-- Explainability Metric -->
+        <div class="metric-card">
+            <h3>Explainability</h3>
+            <div class="metric-value">{{ "%.1f"|format(metrics.explainability.explainability_percent) }}%</div>
+            <div class="metric-label">
+                {{ metrics.explainability.recommendations_with_rationale }} / {{ metrics.explainability.total_recommendations }} recommendations
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill {% if metrics.explainability.explainability_percent < 100 %}warning{% endif %}" 
+                     style="width: {{ metrics.explainability.explainability_percent }}%"></div>
+            </div>
+        </div>
+        
+        <!-- Auditability Metric -->
+        <div class="metric-card">
+            <h3>Auditability</h3>
+            <div class="metric-value">{{ "%.1f"|format(metrics.auditability.auditability_percent) }}%</div>
+            <div class="metric-label">
+                {{ metrics.auditability.recommendations_with_trace }} / {{ metrics.auditability.total_recommendations }} recommendations
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill {% if metrics.auditability.auditability_percent < 100 %}warning{% endif %}" 
+                     style="width: {{ metrics.auditability.auditability_percent }}%"></div>
+            </div>
+        </div>
+        
+        <!-- Consent Enforcement -->
+        <div class="metric-card">
+            <h3>Consent Enforcement</h3>
+            <div class="metric-value">
+                {% if metrics.consent_enforcement.compliant %}
+                    <span style="color: #27ae60;">✓ PASS</span>
+                {% else %}
+                    <span style="color: #e74c3c;">✗ FAIL</span>
+                {% endif %}
+            </div>
+            <div class="metric-label">
+                Recommendations without consent: {{ metrics.consent_enforcement.recommendations_without_consent }}
+            </div>
+            <details>
+                <summary>Details</summary>
+                <ul>
+                    <li>Total recommendations: {{ metrics.consent_enforcement.total_recommendations }}</li>
+                    <li>Users without consent: {{ metrics.consent_enforcement.users_without_consent }}</li>
+                </ul>
+            </details>
+        </div>
+        
+        <!-- Eligibility Compliance -->
+        <div class="metric-card">
+            <h3>Eligibility Compliance</h3>
+            <div class="metric-value">{{ "%.1f"|format(metrics.eligibility_compliance.compliance_percent) }}%</div>
+            <div class="metric-label">
+                {{ metrics.eligibility_compliance.recommendations_passed_eligibility }} passed / {{ metrics.eligibility_compliance.total_recommendations }} total
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill {% if metrics.eligibility_compliance.compliance_percent < 100 %}error{% endif %}" 
+                     style="width: {{ metrics.eligibility_compliance.compliance_percent }}%"></div>
+            </div>
+        </div>
+        
+        <!-- Tone Compliance -->
+        <div class="metric-card">
+            <h3>Tone Compliance</h3>
+            <div class="metric-value">{{ "%.1f"|format(metrics.tone_compliance.compliance_percent) }}%</div>
+            <div class="metric-label">
+                {{ metrics.tone_compliance.recommendations_without_violations }} without violations / {{ metrics.tone_compliance.total_recommendations }} total
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill {% if metrics.tone_compliance.compliance_percent < 100 %}error{% endif %}" 
+                     style="width: {{ metrics.tone_compliance.compliance_percent }}%"></div>
+            </div>
+            {% if metrics.tone_compliance.recommendations_with_violations > 0 %}
+            <details>
+                <summary>Violations</summary>
+                <p>Recommendations with violations: {{ metrics.tone_compliance.recommendations_with_violations }}</p>
+            </details>
+            {% endif %}
+        </div>
+        
+        <!-- Relevance -->
+        <div class="metric-card">
+            <h3>Relevance</h3>
+            <div class="metric-value">{{ "%.1f"|format(metrics.relevance.relevance_percent) }}%</div>
+            <div class="metric-label">
+                {{ metrics.relevance.relevant_recommendations }} relevant / {{ metrics.relevance.total_education_recommendations }} education recommendations
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill {% if metrics.relevance.relevance_percent < 80 %}warning{% endif %}" 
+                     style="width: {{ metrics.relevance.relevance_percent }}%"></div>
+            </div>
+            <details>
+                <summary>Details</summary>
+                <ul>
+                    {% for match_type, count in metrics.relevance.by_type.items() %}
+                    <li>{{ match_type }}: {{ count }}</li>
+                    {% endfor %}
+                </ul>
+            </details>
+        </div>
+    </div>
+    
+    <!-- Statistics -->
+    <section class="section">
+        <h3>System Statistics</h3>
+        <div class="summary-stats">
+            <div class="stat-item">
+                <label>Total Users</label>
+                <span>{{ stats.total_users }}</span>
+            </div>
+            <div class="stat-item">
+                <label>Users with Consent</label>
+                <span>{{ stats.users_with_consent }}</span>
+            </div>
+            <div class="stat-item">
+                <label>Users with Recommendations</label>
+                <span>{{ stats.users_with_recommendations }}</span>
+            </div>
+            <div class="stat-item">
+                <label>Total Recommendations</label>
+                <span>{{ stats.total_recommendations }}</span>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+

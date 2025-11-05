@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Recommendation Detail - SpendSense{% endblock %}
+
+{% block content %}
+<div class="recommendation-detail">
+    <div class="detail-header">
+        <h2>Recommendation Detail</h2>
+        <a href="/review" class="btn btn-secondary">← Back to Review</a>
+    </div>
+    
+    <div class="recommendation-full-card">
+        <div class="detail-meta">
+            <p><strong>User:</strong> <a href="/users/{{ recommendation.user_id }}">{{ recommendation.user_id }}</a></p>
+            <p><strong>Type:</strong> {{ recommendation.recommendation_type|title }}</p>
+            <p><strong>Status:</strong> <span class="badge badge-{{ recommendation.status }}">{{ recommendation.status|title }}</span></p>
+            <p><strong>Persona:</strong> {{ recommendation.persona or "N/A" }}</p>
+            <p><strong>Created:</strong> {{ recommendation.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        </div>
+        
+        <div class="detail-content">
+            <h3>Content:</h3>
+            <div class="content-box">{{ recommendation.content|safe }}</div>
+            
+            <h3>⭐ Rationale:</h3>
+            <div class="rationale-box">{{ recommendation.rationale }}</div>
+            
+            {% if recommendation.operator_notes %}
+            <h3>Operator Notes:</h3>
+            <div class="notes-box">{{ recommendation.operator_notes }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Decision Trace - CRITICAL REQUIREMENT -->
+        {% if trace %}
+        <div class="decision-trace-section">
+            <h3>⭐ Decision Trace (Why this recommendation was made)</h3>
+            <div class="trace-content">
+                <h4>Input Signals Used:</h4>
+                <pre>{{ trace.input_signals|tojson }}</pre>
+                
+                <h4>Persona Assignment:</h4>
+                <p><strong>Persona:</strong> {{ trace.persona_assigned }}</p>
+                <p><strong>Reasoning:</strong> {{ trace.persona_reasoning }}</p>
+                
+                <h4>Template Used:</h4>
+                <p>{{ trace.template_used }}</p>
+                
+                <h4>Variables Inserted:</h4>
+                <pre>{{ trace.variables_inserted|tojson }}</pre>
+                
+                <h4>Eligibility Checks:</h4>
+                <pre>{{ trace.eligibility_checks|tojson }}</pre>
+                
+                <h4>Metadata:</h4>
+                <p><strong>Timestamp:</strong> {{ trace.timestamp }}</p>
+                <p><strong>Version:</strong> {{ trace.version }}</p>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Actions -->
+        <div class="detail-actions">
+            {% if recommendation.status == "pending" or recommendation.status == "flagged" %}
+            <form method="post" action="/approve/{{ recommendation.recommendation_id }}" class="action-form">
+                <div class="form-group">
+                    <label for="notes">Notes (optional):</label>
+                    <input type="text" id="notes" name="notes" placeholder="Optional notes">
+                </div>
+                <button type="submit" class="btn btn-success">⭐ Approve</button>
+            </form>
+            
+            <form method="post" action="/override/{{ recommendation.recommendation_id }}" class="action-form">
+                <div class="form-group">
+                    <label for="reason">Reason (required):</label>
+                    <input type="text" id="reason" name="reason" required placeholder="Reason for override">
+                </div>
+                <button type="submit" class="btn btn-danger">⭐ Override/Reject</button>
+            </form>
+            
+            <form method="post" action="/flag/{{ recommendation.recommendation_id }}" class="action-form">
+                <div class="form-group">
+                    <label for="flag_reason">Flag Reason (required):</label>
+                    <input type="text" id="flag_reason" name="reason" required placeholder="Reason for flagging">
+                </div>
+                <button type="submit" class="btn btn-warning">⭐ Flag for Review</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+

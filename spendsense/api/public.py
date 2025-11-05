@@ -154,13 +154,18 @@ def get_profile(
     signals_30d, signals_180d = calculate_signals(user_id, session=session)
     
     # Assign persona
-    persona_assignment_30d, _ = assign_persona(
+    persona_assignment_30d, persona_assignment_180d = assign_persona(
         user_id=user_id,
         signals_30d=signals_30d,
         signals_180d=signals_180d,
         session=session,
         save_history=False
     )
+    
+    # Determine primary persona: 30d persona if available, otherwise 180d persona
+    primary_persona_assignment = persona_assignment_30d
+    if not persona_assignment_30d.persona_id and persona_assignment_180d.persona_id:
+        primary_persona_assignment = persona_assignment_180d
     
     # Get accounts
     accounts = session.query(Account).filter(Account.user_id == user_id).all()
@@ -218,7 +223,7 @@ def get_profile(
     
     return ProfileResponse(
         user=UserResponse.model_validate(user),
-        persona=persona_assignment_30d.persona_name if persona_assignment_30d.persona_id else None,
+        persona=primary_persona_assignment.persona_name if primary_persona_assignment.persona_id else None,
         signals_summary=signals_summary,
         account_summary=account_summary
     )

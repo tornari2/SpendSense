@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+
+{% block title %}User Detail - {{ user_detail.user.user_id }} - SpendSense{% endblock %}
+
+{% block content %}
+<div class="user-detail">
+    <div class="user-header">
+        <h2>User Detail: {{ user_detail.user.user_id }}</h2>
+        <a href="/users" class="btn btn-secondary">← Back to Users</a>
+    </div>
+    
+    <!-- User Information Section -->
+    <section class="section">
+        <h3>User Information</h3>
+        <div class="info-grid">
+            <div class="info-item">
+                <label>Name:</label>
+                <span>{{ user_detail.user.name or "N/A" }}</span>
+            </div>
+            <div class="info-item">
+                <label>Email:</label>
+                <span>{{ user_detail.user.email or "N/A" }}</span>
+            </div>
+            <div class="info-item">
+                <label>Consent Status:</label>
+                {% if user_detail.user.consent_status %}
+                    <span class="badge badge-success">Consented</span>
+                {% else %}
+                    <span class="badge badge-error">Not Consented</span>
+                {% endif %}
+            </div>
+            <div class="info-item">
+                <label>Consent Timestamp:</label>
+                <span>{{ user_detail.user.consent_timestamp.strftime('%Y-%m-%d %H:%M:%S') if user_detail.user.consent_timestamp else "N/A" }}</span>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Signals Display - CRITICAL REQUIREMENT -->
+    <section class="section">
+        <h3>⭐ Detected Signals</h3>
+        
+        <!-- 30-Day Signals -->
+        <div class="signals-section">
+            <h4>30-Day Signals</h4>
+            <div class="signals-grid">
+                <div class="signal-card">
+                    <h5>Subscriptions</h5>
+                    <ul>
+                        <li>Recurring Merchants: <strong>{{ user_detail.signals_30d.subscriptions.recurring_merchant_count }}</strong></li>
+                        <li>Monthly Recurring Spend: <strong>${{ "%.2f"|format(user_detail.signals_30d.subscriptions.monthly_recurring_spend) }}</strong></li>
+                        <li>Subscription Share: <strong>{{ "%.1f"|format(user_detail.signals_30d.subscriptions.subscription_share_percent) }}%</strong></li>
+                    </ul>
+                </div>
+                
+                <div class="signal-card">
+                    <h5>Savings</h5>
+                    <ul>
+                        <li>Net Inflow: <strong>${{ "%.2f"|format(user_detail.signals_30d.savings.net_inflow) }}</strong></li>
+                        <li>Growth Rate: <strong>{{ "%.1f"|format(user_detail.signals_30d.savings.growth_rate_percent) }}%</strong></li>
+                        <li>Emergency Fund Months: <strong>{{ "%.1f"|format(user_detail.signals_30d.savings.emergency_fund_months) }}</strong></li>
+                    </ul>
+                </div>
+                
+                <div class="signal-card">
+                    <h5>Credit</h5>
+                    <ul>
+                        <li>Number of Credit Cards: <strong>{{ user_detail.signals_30d.credit.num_credit_cards }}</strong></li>
+                        <li>Max Utilization: 
+                            <strong class="utilization-{{ 'high' if user_detail.signals_30d.credit.max_utilization_percent > 50 else ('medium' if user_detail.signals_30d.credit.max_utilization_percent > 30 else 'low') }}">
+                                {{ "%.1f"|format(user_detail.signals_30d.credit.max_utilization_percent) }}%
+                            </strong>
+                        </li>
+                        <li>Flags: 
+                            {% if user_detail.signals_30d.credit.flag_30_percent %}<span class="badge badge-warning">30%</span>{% endif %}
+                            {% if user_detail.signals_30d.credit.flag_50_percent %}<span class="badge badge-warning">50%</span>{% endif %}
+                            {% if user_detail.signals_30d.credit.flag_80_percent %}<span class="badge badge-error">80%</span>{% endif %}
+                            {% if user_detail.signals_30d.credit.is_overdue %}<span class="badge badge-error">Overdue</span>{% endif %}
+                            {% if user_detail.signals_30d.credit.minimum_payment_only %}<span class="badge badge-warning">Minimum Payment Only</span>{% endif %}
+                            {% if user_detail.signals_30d.credit.interest_charges_present %}<span class="badge badge-error">Interest Charges</span>{% endif %}
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="signal-card">
+                    <h5>Income</h5>
+                    <ul>
+                        <li>Payroll Detected: <strong>{{ "Yes" if user_detail.signals_30d.income.payroll_detected else "No" }}</strong></li>
+                        <li>Payment Frequency: <strong>{{ user_detail.signals_30d.income.payment_frequency or "N/A" }}</strong></li>
+                        <li>Cash Flow Buffer: <strong>{{ "%.1f"|format(user_detail.signals_30d.income.cash_flow_buffer_months) }} months</strong></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 180-Day Signals -->
+        <div class="signals-section">
+            <h4>180-Day Signals</h4>
+            <div class="signals-grid">
+                <div class="signal-card">
+                    <h5>Subscriptions</h5>
+                    <ul>
+                        <li>Recurring Merchants: <strong>{{ user_detail.signals_180d.subscriptions.recurring_merchant_count }}</strong></li>
+                        <li>Monthly Recurring Spend: <strong>${{ "%.2f"|format(user_detail.signals_180d.subscriptions.monthly_recurring_spend) }}</strong></li>
+                        <li>Subscription Share: <strong>{{ "%.1f"|format(user_detail.signals_180d.subscriptions.subscription_share_percent) }}%</strong></li>
+                    </ul>
+                </div>
+                
+                <div class="signal-card">
+                    <h5>Savings</h5>
+                    <ul>
+                        <li>Net Inflow: <strong>${{ "%.2f"|format(user_detail.signals_180d.savings.net_inflow) }}</strong></li>
+                        <li>Growth Rate: <strong>{{ "%.1f"|format(user_detail.signals_180d.savings.growth_rate_percent) }}%</strong></li>
+                        <li>Emergency Fund Months: <strong>{{ "%.1f"|format(user_detail.signals_180d.savings.emergency_fund_months) }}</strong></li>
+                    </ul>
+                </div>
+                
+                <div class="signal-card">
+                    <h5>Credit</h5>
+                    <ul>
+                        <li>Number of Credit Cards: <strong>{{ user_detail.signals_180d.credit.num_credit_cards }}</strong></li>
+                        <li>Max Utilization: 
+                            <strong class="utilization-{{ 'high' if user_detail.signals_180d.credit.max_utilization_percent > 50 else ('medium' if user_detail.signals_180d.credit.max_utilization_percent > 30 else 'low') }}">
+                                {{ "%.1f"|format(user_detail.signals_180d.credit.max_utilization_percent) }}%
+                            </strong>
+                        </li>
+                        <li>Flags: 
+                            {% if user_detail.signals_180d.credit.flag_30_percent %}<span class="badge badge-warning">30%</span>{% endif %}
+                            {% if user_detail.signals_180d.credit.flag_50_percent %}<span class="badge badge-warning">50%</span>{% endif %}
+                            {% if user_detail.signals_180d.credit.flag_80_percent %}<span class="badge badge-error">80%</span>{% endif %}
+                            {% if user_detail.signals_180d.credit.is_overdue %}<span class="badge badge-error">Overdue</span>{% endif %}
+                            {% if user_detail.signals_180d.credit.minimum_payment_only %}<span class="badge badge-warning">Minimum Payment Only</span>{% endif %}
+                            {% if user_detail.signals_180d.credit.interest_charges_present %}<span class="badge badge-error">Interest Charges</span>{% endif %}
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="signal-card">
+                    <h5>Income</h5>
+                    <ul>
+                        <li>Payroll Detected: <strong>{{ "Yes" if user_detail.signals_180d.income.payroll_detected else "No" }}</strong></li>
+                        <li>Payment Frequency: <strong>{{ user_detail.signals_180d.income.payment_frequency or "N/A" }}</strong></li>
+                        <li>Cash Flow Buffer: <strong>{{ "%.1f"|format(user_detail.signals_180d.income.cash_flow_buffer_months) }} months</strong></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Persona History Section - CRITICAL REQUIREMENT -->
+    <section class="section">
+        <h3>⭐ Persona Assignments (30d & 180d)</h3>
+        
+        {% if user_detail.persona_history %}
+            <div class="persona-history">
+                <table class="persona-table">
+                    <thead>
+                        <tr>
+                            <th>Window</th>
+                            <th>Persona</th>
+                            <th>Assigned At</th>
+                            <th>Signals Used</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ph in user_detail.persona_history %}
+                        <tr class="{% if ph.is_primary %}primary-persona{% endif %}">
+                            <td>
+                                <strong>{{ ph.window_days }}d</strong>
+                                {% if ph.is_primary %}
+                                    <span class="badge badge-primary">PRIMARY</span>
+                                {% endif %}
+                            </td>
+                            <td><span class="badge badge-persona">{{ ph.persona }}</span></td>
+                            <td>{{ ph.assigned_at[:19] }}</td>
+                            <td>
+                                <details>
+                                    <summary>View Signals</summary>
+                                    <pre>{{ ph.signals|tojson }}</pre>
+                                </details>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty-state">No persona history available</p>
+        {% endif %}
+    </section>
+    
+    <!-- Account Summary Section -->
+    <section class="section">
+        <h3>Account Summary</h3>
+        <div class="account-summary">
+            <div class="summary-stats">
+                <div class="stat-item">
+                    <label>Total Accounts:</label>
+                    <span>{{ user_detail.account_summary.total_accounts }}</span>
+                </div>
+                <div class="stat-item">
+                    <label>Total Deposit Balance:</label>
+                    <span>${{ "%.2f"|format(user_detail.account_summary.total_balance) }}</span>
+                </div>
+                {% if user_detail.account_summary.accounts_by_type %}
+                <div class="stat-item">
+                    <label>Accounts by Type:</label>
+                    <span>
+                        {% for type, count in user_detail.account_summary.accounts_by_type.items() %}
+                            {{ type }}: {{ count }}{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+            
+            {% if user_detail.account_summary.deposit_accounts %}
+            <h4>Deposit Accounts</h4>
+            <table class="account-table">
+                <thead>
+                    <tr>
+                        <th>Account ID</th>
+                        <th>Type</th>
+                        <th>Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account in user_detail.account_summary.deposit_accounts %}
+                    <tr>
+                        <td><code>{{ account.account_id }}</code></td>
+                        <td><span class="badge badge-info">{{ account.type|title }}</span></td>
+                        <td>${{ "%.2f"|format(account.balance) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            
+            {% if user_detail.account_summary.credit_cards %}
+            <h4>Credit Cards</h4>
+            <table class="credit-card-table">
+                <thead>
+                    <tr>
+                        <th>Account ID</th>
+                        <th>Balance</th>
+                        <th>Credit Limit</th>
+                        <th>Utilization</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cc in user_detail.account_summary.credit_cards %}
+                    <tr>
+                        <td><code>{{ cc.account_id }}</code></td>
+                        <td>${{ "%.2f"|format(cc.balance) }}</td>
+                        <td>${{ "%.2f"|format(cc.credit_limit) }}</td>
+                        <td>
+                            <span class="utilization-{{ 'high' if cc.utilization > 50 else ('medium' if cc.utilization > 30 else 'low') }}">
+                                {{ "%.1f"|format(cc.utilization) }}%
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    </section>
+    
+    <!-- Recommendations Section - CRITICAL REQUIREMENT -->
+    <section class="section">
+        <h3>⭐ Recommendations with Rationales</h3>
+        
+        {% if user_detail.recommendations %}
+            {% for rec in user_detail.recommendations %}
+            <div class="recommendation-card">
+                <div class="recommendation-header">
+                    <h4>{{ rec.type|title }} Recommendation</h4>
+                    <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
+                </div>
+                
+                <div class="recommendation-content">
+                    <h5>Content:</h5>
+                    <div class="content-box">{{ rec.content|safe }}</div>
+                    
+                    <h5>⭐ Rationale:</h5>
+                    <div class="rationale-box">{{ rec.rationale }}</div>
+                    
+                    <div class="recommendation-meta">
+                        <span>Persona: <strong>{{ rec.persona or "N/A" }}</strong></span>
+                        <span>Created: {{ rec.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+                    </div>
+                    
+                    <!-- Decision Trace - CRITICAL REQUIREMENT -->
+                    {% if rec.decision_trace %}
+                    <details class="decision-trace">
+                        <summary><strong>⭐ Decision Trace (Why this recommendation was made)</strong></summary>
+                        <div class="trace-content">
+                            <h6>Input Signals Used:</h6>
+                            <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
+                            
+                            <h6>Persona Assignment:</h6>
+                            <p><strong>Persona:</strong> {{ rec.decision_trace.persona_assigned }}</p>
+                            <p><strong>Reasoning:</strong> {{ rec.decision_trace.persona_reasoning }}</p>
+                            
+                            <h6>Template Used:</h6>
+                            <p>{{ rec.decision_trace.template_used }}</p>
+                            
+                            <h6>Variables Inserted:</h6>
+                            <pre>{{ rec.decision_trace.variables_inserted|tojson }}</pre>
+                            
+                            <h6>Eligibility Checks:</h6>
+                            <pre>{{ rec.decision_trace.eligibility_checks|tojson }}</pre>
+                            
+                            <h6>Metadata:</h6>
+                            <p><strong>Timestamp:</strong> {{ rec.decision_trace.timestamp }}</p>
+                            <p><strong>Version:</strong> {{ rec.decision_trace.version }}</p>
+                        </div>
+                    </details>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="empty-state">No recommendations available for this user</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
+

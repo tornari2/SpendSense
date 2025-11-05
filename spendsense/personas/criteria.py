@@ -63,7 +63,7 @@ def check_persona1_high_utilization(signals: SignalSet) -> Tuple[bool, str, Dict
     return matches, reasoning, signals_used
 
 
-def check_persona2_variable_income(signals: SignalSet) -> Tuple[bool, str, Dict]:
+def check_persona2_variable_income(signals: SignalSet, signals_180d: SignalSet = None) -> Tuple[bool, str, Dict]:
     """
     Check if user matches Persona 2: Variable Income Budgeter
     
@@ -71,8 +71,12 @@ def check_persona2_variable_income(signals: SignalSet) -> Tuple[bool, str, Dict]
     - Median pay gap > 45 days AND
     - Cash-flow buffer < 1 month
     
+    Note: Pay gap calculation uses 180-day window signals if available,
+    since gaps >45 days require historical context beyond a 30-day window.
+    
     Args:
         signals: SignalSet for 30-day or 180-day window
+        signals_180d: Optional SignalSet for 180-day window (used for pay gap if provided)
     
     Returns:
         Tuple of (matches, reasoning, signals_used)
@@ -86,28 +90,38 @@ def check_persona2_variable_income(signals: SignalSet) -> Tuple[bool, str, Dict]
         reasoning = "Does not match Variable Income Budgeter: No income detected"
         return matches, reasoning, signals_used
     
+    # Use 180-day window signals for pay gap if available (can detect gaps >45 days)
+    # Use window-specific signals for buffer (30d for 30d window, 180d for 180d window)
+    if signals_180d and signals_180d.income.payroll_detected:
+        pay_gap = signals_180d.income.median_pay_gap_days
+        # Use buffer from the window being evaluated
+        buffer = income.cash_flow_buffer_months
+    else:
+        pay_gap = income.median_pay_gap_days
+        buffer = income.cash_flow_buffer_months
+    
     # Check median pay gap > 45 days
-    pay_gap_high = income.median_pay_gap_days > 45
+    pay_gap_high = pay_gap > 45
     
     # Check cash-flow buffer < 1 month
-    buffer_low = income.cash_flow_buffer_months < 1.0
+    buffer_low = buffer < 1.0
     
     if pay_gap_high and buffer_low:
         matches = True
         reasoning = (
-            f"Variable Income Budgeter: Median pay gap of {income.median_pay_gap_days:.1f} days "
-            f"(>45 days) and cash-flow buffer of {income.cash_flow_buffer_months:.2f} months (<1 month)"
+            f"Variable Income Budgeter: Median pay gap of {pay_gap:.1f} days "
+            f"(>45 days) and cash-flow buffer of {buffer:.2f} months (<1 month)"
         )
-        signals_used['median_pay_gap_days'] = income.median_pay_gap_days
-        signals_used['cash_flow_buffer_months'] = income.cash_flow_buffer_months
+        signals_used['median_pay_gap_days'] = pay_gap
+        signals_used['cash_flow_buffer_months'] = buffer
     else:
         reasoning = "Does not match Variable Income Budgeter criteria"
         if not pay_gap_high:
-            reasoning += f" (pay gap {income.median_pay_gap_days:.1f} days ≤ 45)"
+            reasoning += f" (pay gap {pay_gap:.1f} days ≤ 45)"
         if not buffer_low:
-            reasoning += f" (buffer {income.cash_flow_buffer_months:.2f} months ≥ 1)"
-        signals_used['median_pay_gap_days'] = income.median_pay_gap_days
-        signals_used['cash_flow_buffer_months'] = income.cash_flow_buffer_months
+            reasoning += f" (buffer {buffer:.2f} months ≥ 1)"
+        signals_used['median_pay_gap_days'] = pay_gap
+        signals_used['cash_flow_buffer_months'] = buffer
     
     return matches, reasoning, signals_used
 
@@ -240,14 +254,14 @@ def check_persona5_lifestyle_inflator(signals: SignalSet) -> Tuple[bool, str, Di
     """
     Check if user matches Persona 5: Lifestyle Inflator
     
-    Criteria:
-    - Income increased ≥15% over 180 days AND
-    - Savings rate decreased or stayed flat (±2%)
+    Criteria (either condition):
+    1. Income increased ≥15% over the period AND savings rate decreased or stayed flat (±2%)
+    2. Income stayed flat (±5%) AND savings rate decreased (< 0%)
     
-    Note: This only works with 180-day window signals (requires lifestyle signals)
+    Note: Works with both 30-day window (uses 90-day lookback) and 180-day window signals
     
     Args:
-        signals: SignalSet for 180-day window (must have lifestyle signals)
+        signals: SignalSet for 30-day or 180-day window (must have lifestyle signals)
     
     Returns:
         Tuple of (matches, reasoning, signals_used)
@@ -255,9 +269,9 @@ def check_persona5_lifestyle_inflator(signals: SignalSet) -> Tuple[bool, str, Di
     matches = False
     signals_used = {}
     
-    # Lifestyle signals only available for 180d window
-    if signals.window_days < 180 or signals.lifestyle is None:
-        reasoning = "Does not match Lifestyle Inflator: Requires 180-day window with lifestyle signals"
+    # Lifestyle signals must be available (calculated with 90-day or 180-day lookback)
+    if signals.lifestyle is None:
+        reasoning = "Does not match Lifestyle Inflator: Requires lifestyle signals"
         return matches, reasoning, signals_used
     
     lifestyle = signals.lifestyle
@@ -267,27 +281,36 @@ def check_persona5_lifestyle_inflator(signals: SignalSet) -> Tuple[bool, str, Di
         reasoning = "Does not match Lifestyle Inflator: Insufficient historical data"
         return matches, reasoning, signals_used
     
-    # Check income increased ≥15%
+    # Condition 1: Income increased ≥15% AND savings rate decreased/stayed flat (±2%)
     income_increased = lifestyle.income_change_percent >= 15.0
-    
-    # Check savings rate decreased or stayed flat (±2%)
     savings_rate_flat_or_down = lifestyle.savings_rate_change_percent <= 2.0
+    condition1 = income_increased and savings_rate_flat_or_down
     
-    if income_increased and savings_rate_flat_or_down:
+    # Condition 2: Income stayed flat (±5%) AND savings rate decreased (< 0%)
+    income_flat = -5.0 <= lifestyle.income_change_percent <= 5.0
+    savings_rate_decreased = lifestyle.savings_rate_change_percent < 0.0
+    condition2 = income_flat and savings_rate_decreased
+    
+    if condition1 or condition2:
         matches = True
-        reasoning = (
-            f"Lifestyle Inflator: Income increased {lifestyle.income_change_percent:.1f}% "
-            f"but savings rate changed {lifestyle.savings_rate_change_percent:.1f}% "
-            f"(income growth without proportional savings increase)"
-        )
+        if condition1:
+            reasoning = (
+                f"Lifestyle Inflator: Income increased {lifestyle.income_change_percent:.1f}% "
+                f"but savings rate changed {lifestyle.savings_rate_change_percent:.1f}% "
+                f"(income growth without proportional savings increase)"
+            )
+        else:  # condition2
+            reasoning = (
+                f"Lifestyle Inflator: Income stayed flat ({lifestyle.income_change_percent:.1f}%) "
+                f"but savings rate decreased {lifestyle.savings_rate_change_percent:.1f}% "
+                f"(maintaining lifestyle despite flat income)"
+            )
         signals_used['income_change_percent'] = lifestyle.income_change_percent
         signals_used['savings_rate_change_percent'] = lifestyle.savings_rate_change_percent
     else:
         reasoning = "Does not match Lifestyle Inflator criteria"
-        if not income_increased:
-            reasoning += f" (income change {lifestyle.income_change_percent:.1f}% < 15%)"
-        if not savings_rate_flat_or_down:
-            reasoning += f" (savings rate increased {lifestyle.savings_rate_change_percent:.1f}% > 2%)"
+        if not condition1 and not condition2:
+            reasoning += f" (income change {lifestyle.income_change_percent:.1f}%, savings rate change {lifestyle.savings_rate_change_percent:.1f}%)"
         signals_used['income_change_percent'] = lifestyle.income_change_percent
         signals_used['savings_rate_change_percent'] = lifestyle.savings_rate_change_percent
     

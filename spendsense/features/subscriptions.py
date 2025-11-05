@@ -40,18 +40,27 @@ class SubscriptionSignals:
 
 def detect_subscriptions(
     transactions: List[Transaction],
-    window_days: int
+    window_days: int,
+    all_transactions: List[Transaction] = None
 ) -> SubscriptionSignals:
     """
     Detect subscription patterns in transactions.
     
+    For both 30-day and 180-day window signals:
+    - Find merchants that appear in the window (30d or 180d)
+    - Verify they have ≥3 transactions in the last 90 days with consistent cadence
+    
     A merchant is considered "recurring" if:
-    1. They appear ≥3 times in the window
-    2. Payments have a consistent cadence (weekly ~7 days, monthly ~30 days)
+    1. They appear in the window (30d or 180d)
+    2. They have ≥3 transactions in the last 90 days (consistent across all windows)
+    3. Payments have a consistent cadence (weekly ~7 days, monthly ~30 days)
+    
+    Note: Spend is counted from transactions in the window, but detection uses 90-day lookback.
     
     Args:
-        transactions: List of transactions in the time window
+        transactions: List of transactions in the time window (30d or 180d)
         window_days: Size of the time window (30 or 180 days)
+        all_transactions: All transactions (required for 90-day lookback detection)
     
     Returns:
         SubscriptionSignals object with detected patterns
@@ -69,25 +78,54 @@ def detect_subscriptions(
             window_days=window_days
         )
     
-    # Calculate total spend
+    # Calculate total spend (in the window)
     total_spend = sum(t.amount for t in expenses)
     
-    # Group transactions by merchant
-    merchant_transactions: Dict[str, List[Transaction]] = defaultdict(list)
+    # Identify merchants that appear in the window
+    window_merchants = set()
     for txn in expenses:
         if txn.merchant_name:
+            window_merchants.add(txn.merchant_name)
+    
+    # Always use 90-day lookback for recurring pattern detection (per spec: ≥3 in 90 days)
+    # This ensures consistent detection logic regardless of window size
+    lookback_days = 90
+    
+    # Get all transactions for lookback period (for cadence checking)
+    if all_transactions:
+        # Use all_transactions filtered to 90 days
+        from .window_utils import filter_transactions_by_window
+        lookback_transactions = filter_transactions_by_window(all_transactions, lookback_days)
+    else:
+        # Fallback: filter window transactions to last 90 days
+        from .window_utils import filter_transactions_by_window
+        lookback_transactions = filter_transactions_by_window(transactions, lookback_days)
+    
+    # Group lookback transactions by merchant
+    merchant_transactions: Dict[str, List[Transaction]] = defaultdict(list)
+    for txn in lookback_transactions:
+        if txn.merchant_name and txn.amount > 0:
             merchant_transactions[txn.merchant_name].append(txn)
     
     # Detect recurring merchants
+    # Only check merchants that appear in the window
     recurring_merchants = []
     recurring_spend = 0.0
     
-    for merchant, txns in merchant_transactions.items():
-        if len(txns) >= 3:
+    for merchant in window_merchants:
+        merchant_txns = merchant_transactions.get(merchant, [])
+        
+        # Must have ≥3 transactions in lookback period
+        if len(merchant_txns) >= 3:
             # Check for consistent cadence
-            if _has_consistent_cadence(txns):
+            if _has_consistent_cadence(merchant_txns):
                 recurring_merchants.append(merchant)
-                recurring_spend += sum(t.amount for t in txns)
+                # Count spend only from transactions in the window
+                merchant_spend_in_window = sum(
+                    t.amount for t in expenses 
+                    if t.merchant_name == merchant
+                )
+                recurring_spend += merchant_spend_in_window
     
     # Calculate monthly recurring spend
     # Normalize to 30-day period

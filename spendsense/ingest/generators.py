@@ -50,10 +50,27 @@ class SyntheticUserGenerator:
         # Use weighted distribution to create realistic spread
         credit_score = self._generate_credit_score()
         
+        # Generate name
+        name = self.fake.name()
+        
+        # Generate email from name: first character of first name + last name + @example.com
+        # Format: "John Doe" -> "jdoe@example.com"
+        # If email already exists, append user_number to ensure uniqueness
+        name_parts = name.split()
+        if len(name_parts) >= 2:
+            first_name = name_parts[0]
+            last_name = name_parts[-1]
+            base_email = f"{first_name[0].lower()}{last_name.lower()}@example.com"
+            # Append user_number to ensure uniqueness
+            email = f"{first_name[0].lower()}{last_name.lower()}{user_number}@example.com"
+        else:
+            # Fallback if name doesn't split properly
+            email = f"{name.lower().replace(' ', '')}{user_number}@example.com"
+        
         user_data = {
             "user_id": user_id,
-            "name": self.fake.name(),
-            "email": self.fake.email(),
+            "name": name,
+            "email": email,
             "credit_score": credit_score,
             "consent_status": has_consent,
             "consent_timestamp": datetime.utcnow() - timedelta(days=random.randint(1, 30)) if has_consent else None,
@@ -114,6 +131,8 @@ class SyntheticAccountGenerator:
         "credit_card": {"weight": 0.8, "has_limit": True},
         "money_market": {"weight": 0.15, "has_limit": False},
         "hsa": {"weight": 0.20, "has_limit": False},
+        "mortgage": {"weight": 0.35, "has_limit": False},  # 35% of users have mortgages
+        "student_loan": {"weight": 0.25, "has_limit": False},  # 25% of users have student loans
     }
     
     def generate_accounts_for_user(self, user_id: str, credit_score: int) -> List[Dict]:
@@ -192,6 +211,18 @@ class SyntheticAccountGenerator:
             
         elif account_type == "hsa":
             balance = random.uniform(500, 10000)
+            available = balance
+            limit = None
+        
+        elif account_type == "mortgage":
+            # Mortgage balance (remaining principal)
+            balance = random.uniform(50000, 500000)  # Typical mortgage range
+            available = balance
+            limit = None
+        
+        elif account_type == "student_loan":
+            # Student loan balance
+            balance = random.uniform(10000, 150000)  # Typical student loan range
             available = balance
             limit = None
         
@@ -523,7 +554,7 @@ class SyntheticTransactionGenerator:
 
 
 class SyntheticLiabilityGenerator:
-    """Generate synthetic liabilities for credit card accounts."""
+    """Generate synthetic liabilities for credit card accounts, mortgages, and student loans."""
     
     def generate_liability_for_account(
         self, 
@@ -544,7 +575,23 @@ class SyntheticLiabilityGenerator:
         Returns:
             Liability dict or None if not applicable
         """
-        if account_type != "credit_card" or balance == 0:
+        if account_type == "credit_card":
+            return self._generate_credit_card_liability(account_id, balance, credit_limit)
+        elif account_type == "mortgage":
+            return self._generate_mortgage_liability(account_id, balance)
+        elif account_type == "student_loan":
+            return self._generate_student_loan_liability(account_id, balance)
+        else:
+            return None
+    
+    def _generate_credit_card_liability(
+        self, 
+        account_id: str,
+        balance: float,
+        credit_limit: float = None
+    ) -> Dict:
+        """Generate liability for credit card account."""
+        if balance == 0:
             return None
         
         # Generate APR based on risk
@@ -581,7 +628,88 @@ class SyntheticLiabilityGenerator:
             "is_overdue": is_overdue,
             "next_payment_due_date": datetime.now().date() + timedelta(days=random.randint(5, 25)),
             "last_statement_balance": balance * random.uniform(0.9, 1.1),
-            "interest_rate": None  # For loans only
+            "interest_rate": None  # Not used for credit cards
+        }
+        
+        return liability
+    
+    def _generate_mortgage_liability(self, account_id: str, balance: float) -> Dict:
+        """Generate liability for mortgage account."""
+        if balance == 0:
+            return None
+        
+        # Typical mortgage interest rates (3-6% for fixed, 3.5-7% for variable)
+        apr_type = random.choice(["fixed", "variable"])
+        if apr_type == "fixed":
+            interest_rate = random.uniform(3.0, 6.0)
+        else:
+            interest_rate = random.uniform(3.5, 7.0)
+        
+        # Mortgage payment typically includes principal + interest
+        # Typical mortgage is 15-30 years, so monthly payment is roughly balance / (years * 12)
+        years = random.choice([15, 20, 30])
+        monthly_payment = balance / (years * 12) * (1 + interest_rate / 100 / 12)
+        
+        # Last payment amount (usually close to monthly payment)
+        last_payment = monthly_payment * random.uniform(0.98, 1.02)
+        
+        # Overdue status (5% chance)
+        is_overdue = random.random() < 0.05
+        
+        liability = {
+            "liability_id": f"{account_id}_liability",
+            "account_id": account_id,
+            "type": "mortgage",
+            "apr_percentage": None,  # Not used for mortgages
+            "apr_type": None,
+            "minimum_payment_amount": monthly_payment,
+            "last_payment_amount": last_payment,
+            "is_overdue": is_overdue,
+            "next_payment_due_date": datetime.now().date() + timedelta(days=random.randint(1, 30)),
+            "last_statement_balance": balance * random.uniform(0.99, 1.01),  # Mortgages change slowly
+            "interest_rate": interest_rate
+        }
+        
+        return liability
+    
+    def _generate_student_loan_liability(self, account_id: str, balance: float) -> Dict:
+        """Generate liability for student loan account."""
+        if balance == 0:
+            return None
+        
+        # Typical student loan interest rates (3-7% for federal, 4-12% for private)
+        loan_type = random.choice(["federal", "private"])
+        if loan_type == "federal":
+            interest_rate = random.uniform(3.0, 7.0)
+        else:
+            interest_rate = random.uniform(4.0, 12.0)
+        
+        # Student loan payment typically based on balance and repayment plan
+        # Typical repayment is 10-20 years
+        years = random.choice([10, 15, 20])
+        monthly_payment = balance / (years * 12) * (1 + interest_rate / 100 / 12)
+        
+        # Minimum payment (could be lower for income-driven plans)
+        min_payment = monthly_payment * random.uniform(0.8, 1.0)
+        
+        # Last payment amount
+        last_payment = min_payment * random.uniform(0.95, 1.05)
+        
+        # Overdue status (8% chance)
+        is_overdue = random.random() < 0.08
+        
+        liability = {
+            "liability_id": f"{account_id}_liability",
+            "account_id": account_id,
+            "type": "student_loan",
+            "apr_percentage": None,  # Not used for student loans
+            "apr_type": None,
+            "minimum_payment_amount": min_payment,
+            "last_payment_amount": last_payment,
+            "is_overdue": is_overdue,
+            "next_payment_due_date": datetime.now().date() + timedelta(days=random.randint(1, 30)),
+            "last_statement_balance": balance * random.uniform(0.99, 1.01),
+            "interest_rate": interest_rate
         }
         
         return liability

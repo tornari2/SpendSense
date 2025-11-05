@@ -103,11 +103,12 @@ def assign_persona(
         )
         
         # Save to history if requested
+        # Only save if persona has changed (skip_duplicates=True prevents duplicates)
         if save_history:
-            # Save both assignments
-            save_persona_history(assignment_30d, session=session)
-            save_persona_history(assignment_180d, session=session)
-            # Ensure session is committed so history is visible
+            # Save both assignments (will skip if persona hasn't changed)
+            save_persona_history(assignment_30d, session=session, skip_duplicates=True)
+            save_persona_history(assignment_180d, session=session, skip_duplicates=True)
+            # Commit only if new records were actually added
             session.commit()
         
         return assignment_30d, assignment_180d
@@ -148,7 +149,8 @@ def _assign_persona_for_window(
     # Evaluate all personas
     matching_personas = evaluate_all_personas(
         signals_30d=signals_30d,
-        signals_180d=signals_180d
+        signals_180d=signals_180d,
+        window_days=window_days
     )
     
     # Resolve priority

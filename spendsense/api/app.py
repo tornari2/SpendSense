@@ -8,11 +8,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from spendsense.api.public import router as public_router
 from spendsense.api.operator import router as operator_router
 from spendsense.recommend.api import router as recommend_router
+from spendsense.ui.routes import router as ui_router
 from spendsense.api.exceptions import ConsentRequiredError, UserNotFoundError, RecommendationNotFoundError
 
 
@@ -34,22 +36,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files for UI
+app.mount("/static", StaticFiles(directory="spendsense/ui/static"), name="static")
+
 # Register routers
 app.include_router(public_router)
 app.include_router(operator_router)
 app.include_router(recommend_router)
-
-
-# Root endpoint
-@app.get("/")
-def root():
-    """Root endpoint."""
-    return {
-        "message": "SpendSense API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "redoc": "/redoc"
-    }
+app.include_router(ui_router)  # Operator UI routes (includes root "/" route)
 
 
 # Health check endpoint

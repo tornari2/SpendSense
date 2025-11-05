@@ -8,7 +8,7 @@ Generate 100 users with specific persona distribution:
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, List, Dict
 from sqlalchemy.orm import Session
 
 from spendsense.ingest.database import get_engine, get_session, init_database
@@ -19,6 +19,9 @@ from spendsense.ingest.generators import (
     SyntheticTransactionGenerator,
     SyntheticLiabilityGenerator
 )
+from spendsense.recommend.engine import generate_recommendations
+from spendsense.personas.assignment import assign_persona
+from spendsense.features.signals import calculate_signals
 
 # Set seed for reproducibility
 random.seed(42)
@@ -33,7 +36,9 @@ def create_user_for_persona(
     account_gen: SyntheticAccountGenerator,
     transaction_gen: SyntheticTransactionGenerator,
     liability_gen: SyntheticLiabilityGenerator,
-    multi_persona_overlay: Optional[str] = None
+    multi_persona_overlay: Optional[str] = None,
+    high_util_reason: Optional[str] = None,
+    lifestyle_inflator_reason: Optional[str] = None
 ):
     """
     Create a user with financial profile tailored to a specific persona.
@@ -73,7 +78,9 @@ def create_user_for_persona(
     
     # Generate accounts based on persona (with overlay if multi-persona)
     accounts = _create_persona_profile_with_behaviors(
-        user, persona_type, account_gen, transaction_gen, liability_gen, multi_persona_overlay
+        user, persona_type, account_gen, transaction_gen, liability_gen, multi_persona_overlay,
+        high_util_reason=high_util_reason if persona_type == "high_utilization" else None,
+        lifestyle_inflator_reason=lifestyle_inflator_reason if persona_type == "lifestyle_inflator" else None
     )
     
     # Generate transactions and liabilities for all accounts
@@ -81,49 +88,138 @@ def create_user_for_persona(
         session.add(account)
         
         # Determine transaction parameters based on persona and overlay
+        # For variable income, we need irregular pay gaps >45 days
         if persona_type == "variable_income" or multi_persona_overlay == "variable_income":
-            income_freq = random.choice(["weekly", "biweekly"])  # More variable
+            # Generate irregular income with gaps >45 days
+            transactions_list = _generate_variable_income_transactions(
+                account.account_id, account.type, transaction_gen
+            )
         else:
             income_freq = random.choice(["biweekly", "monthly"])
+            transactions_list = transaction_gen.generate_transactions_for_account(
+                account.account_id,
+                account.type,
+                months=5,
+                income_frequency=income_freq if account.type == "checking" else None
+            )
         
-        transactions_list = transaction_gen.generate_transactions_for_account(
-            account.account_id,
-            account.type,
-            months=5,
-            income_frequency=income_freq if account.type == "checking" else None
-        )
-        
-        # For subscription-heavy personas, ensure we have enough subscription transactions
+        # For subscription-heavy personas, ensure we have ≥3 merchants and ≥$50/month
         if (persona_type == "subscription_heavy" or multi_persona_overlay == "subscription_heavy") and account.type == "checking":
-            # Manually add more subscription transactions if needed
-            from spendsense.ingest.merchants import get_subscription_merchants, get_merchant_info
+            transactions_list = _ensure_subscription_heavy_transactions(
+                account.account_id, transactions_list
+            )
+        
+        # For savings builder, ensure savings transfers ≥$200/month
+        if persona_type == "savings_builder" and account.type == "savings":
+            transactions_list = _ensure_savings_builder_transactions(
+                account.account_id, transactions_list, account.balance_current
+            )
+        
+        # For high utilization, ensure credit card balance reflects ≥50% utilization
+        if (persona_type == "high_utilization" or multi_persona_overlay == "high_utilization") and account.type == "credit_card":
+            # For utilization_50 reason, ensure balance meets threshold
+            if high_util_reason == "utilization_50":
+                if account.credit_limit and account.balance_current < (account.credit_limit * 0.5):
+                    # Increase balance to meet threshold
+                    account.balance_current = account.credit_limit * random.uniform(0.55, 0.95)
+                    account.balance_available = account.credit_limit - account.balance_current
             
-            subscription_merchants = get_subscription_merchants()
-            # Add 5-8 subscription transactions (ensuring ≥3 unique merchants)
-            num_subscriptions = random.randint(5, 8)
-            selected_subscriptions = random.sample(subscription_merchants, min(num_subscriptions, len(subscription_merchants)))
-            
-            for merchant_name in selected_subscriptions[:6]:  # Cap at 6 subscriptions
-                merchant_info = get_merchant_info(merchant_name)
-                if merchant_info:
-                    # Generate monthly subscription charges
-                    for month_offset in range(5):  # 5 months
-                        sub_date = datetime.now().date() - timedelta(days=(month_offset * 30) + random.randint(1, 28))
-                        amount = random.uniform(5, 50)
-                        
-                        subscription_txn = {
-                            "transaction_id": str(uuid.uuid4()),
-                            "account_id": account.account_id,
-                            "date": sub_date,
-                            "amount": amount,
-                            "merchant_name": merchant_name,
-                            "merchant_entity_id": merchant_info["merchant_entity_id"],
-                            "payment_channel": merchant_info["payment_channel"],
-                            "category_primary": merchant_info["category_primary"],
-                            "category_detailed": "Subscription",
-                            "pending": False
-                        }
-                        transactions_list.append(subscription_txn)
+            # Add specific behaviors based on high_util_reason
+            if high_util_reason == "interest_charges":
+                transactions_list = _ensure_interest_charges(
+                    account.account_id, transactions_list
+                )
+            elif high_util_reason == "minimum_payment_only":
+                # Will be handled in liability generation
+                pass
+            elif high_util_reason == "is_overdue":
+                # Will be handled in liability generation
+                pass
+            # "utilization_50" is already handled by the balance check above
+        
+        # For lifestyle inflator, generate income and savings based on reason
+        # AND ensure regular income (pay gaps ≤45 days) to avoid Persona 2
+        # AND limit subscriptions (<3 merchants or <$50/month) to avoid Persona 3
+        if persona_type == "lifestyle_inflator":
+            if account.type == "checking":
+                # Generate base transactions WITHOUT subscriptions first
+                # Then add income and limit subscriptions
+                income_freq = random.choice(["biweekly", "monthly"])
+                transactions_list = transaction_gen.generate_transactions_for_account(
+                    account.account_id,
+                    account.type,
+                    months=6,  # Use 6 months for 180-day window
+                    income_frequency=income_freq if account.type == "checking" else None
+                )
+                # Remove ALL subscription-like transactions before adding income
+                transactions_list = _remove_all_subscriptions(account.account_id, transactions_list)
+                
+                # Add income based on reason
+                if lifestyle_inflator_reason == "income_increasing":
+                    # Condition 1: Income increasing ≥15%, savings rate flat
+                    transactions_list = _ensure_lifestyle_inflator_income(
+                        account.account_id, transactions_list
+                    )
+                elif lifestyle_inflator_reason == "income_flat":
+                    # Condition 2: Income flat (±5%), savings rate decreasing
+                    transactions_list = _ensure_flat_income_with_decreasing_savings(
+                        account.account_id, transactions_list
+                    )
+                else:
+                    # Default: income increasing
+                    transactions_list = _ensure_lifestyle_inflator_income(
+                        account.account_id, transactions_list
+                    )
+                
+                # Ensure regular income (not variable) - pay gaps ≤45 days
+                transactions_list = _ensure_regular_income_pattern(
+                    account.account_id, transactions_list
+                )
+                # Add LIMITED subscriptions to avoid Persona 3
+                transactions_list = _limit_subscriptions_for_persona5(
+                    account.account_id, transactions_list
+                )
+            elif account.type == "savings":
+                # Ensure savings rate based on reason
+                if lifestyle_inflator_reason == "income_increasing":
+                    # Condition 1: Savings rate stays flat (±2%)
+                    transactions_list = _ensure_flat_savings_rate(
+                        account.account_id, transactions_list, account.balance_current
+                    )
+                elif lifestyle_inflator_reason == "income_flat":
+                    # Condition 2: Savings rate decreases (< 0%)
+                    transactions_list = _ensure_decreasing_savings_rate(
+                        account.account_id, transactions_list, account.balance_current
+                    )
+                else:
+                    # Default: flat savings rate
+                    transactions_list = _ensure_flat_savings_rate(
+                        account.account_id, transactions_list, account.balance_current
+                    )
+        
+        # Generate liability if credit card, mortgage, or student loan with balance
+        # Do this BEFORE adding transactions so we can use liability data for minimum payment transactions
+        liability_data = None
+        if account.type in ["credit_card", "mortgage", "student_loan"] and account.balance_current > 0:
+            liability_data = liability_gen.generate_liability_for_account(
+                account.account_id,
+                account.type,
+                account.balance_current,
+                account.credit_limit if account.type == "credit_card" else None
+            )
+            if liability_data:
+                # For high utilization persona, apply specific reason-based modifications
+                if (persona_type == "high_utilization" or multi_persona_overlay == "high_utilization") and account.type == "credit_card":
+                    if high_util_reason == "minimum_payment_only":
+                        # Ensure payments match minimum payment exactly
+                        liability_data['last_payment_amount'] = liability_data['minimum_payment_amount']
+                        # Add payment transactions that match minimum
+                        transactions_list = _ensure_minimum_payment_transactions(
+                            account.account_id, transactions_list, liability_data['minimum_payment_amount']
+                        )
+                    elif high_util_reason == "is_overdue":
+                        # Set overdue flag
+                        liability_data['is_overdue'] = True
         
         # Sort transactions by date
         transactions_list.sort(key=lambda x: x["date"])
@@ -132,17 +228,36 @@ def create_user_for_persona(
             transaction = Transaction(**txn_data)
             session.add(transaction)
         
-        # Generate liability if credit card with balance
-        if account.type == "credit_card" and account.balance_current > 0:
-            liability_data = liability_gen.generate_liability_for_account(
-                account.account_id,
-                account.type,
-                account.balance_current,
-                account.credit_limit
+        # Add liability after transactions are added
+        if liability_data:
+            liability = Liability(**liability_data)
+            session.add(liability)
+    
+    # Assign persona for ALL users (both consented and non-consented)
+    # Non-consented users get personas but no recommendations
+    try:
+        # Assign persona first
+        signals_30d, signals_180d = calculate_signals(user.user_id, session=session)
+        assign_persona(
+            user.user_id,
+            signals_30d,
+            signals_180d,
+            session=session,
+            save_history=True
+        )
+        
+        # Generate recommendations ONLY for consented users
+        if user.consent_status:
+            recommendations = generate_recommendations(
+                user_id=user.user_id,
+                session=session,
+                max_education=5,
+                max_offers=3
             )
-            if liability_data:
-                liability = Liability(**liability_data)
-                session.add(liability)
+            # Recommendations are automatically saved by generate_recommendations
+    except Exception as e:
+        # Log error but don't fail user creation
+        print(f"    Warning: Could not assign persona/recommendations for {user.user_id}: {e}")
     
     return user
 
@@ -153,7 +268,9 @@ def _create_persona_profile_with_behaviors(
     account_gen: SyntheticAccountGenerator,
     transaction_gen: SyntheticTransactionGenerator,
     liability_gen: SyntheticLiabilityGenerator,
-    multi_persona_overlay: Optional[str] = None
+    multi_persona_overlay: Optional[str] = None,
+    high_util_reason: Optional[str] = None,
+    lifestyle_inflator_reason: Optional[str] = None
 ):
     """
     Create accounts with multiple behaviors to ensure ≥3 behaviors per user.
@@ -169,7 +286,7 @@ def _create_persona_profile_with_behaviors(
     
     # Base persona profile
     if persona_type == "high_utilization":
-        accounts = _create_high_utilization_profile(user, account_gen, transaction_gen, liability_gen)
+        accounts = _create_high_utilization_profile(user, account_gen, transaction_gen, liability_gen, high_util_reason)
     elif persona_type == "variable_income":
         accounts = _create_variable_income_profile(user, account_gen, transaction_gen, liability_gen)
     elif persona_type == "subscription_heavy":
@@ -177,7 +294,7 @@ def _create_persona_profile_with_behaviors(
     elif persona_type == "savings_builder":
         accounts = _create_savings_builder_profile(user, account_gen, transaction_gen, liability_gen)
     elif persona_type == "lifestyle_inflator":
-        accounts = _create_lifestyle_inflator_profile(user, account_gen, transaction_gen, liability_gen)
+        accounts = _create_lifestyle_inflator_profile(user, account_gen, transaction_gen, liability_gen, lifestyle_inflator_reason)
     else:
         # Fallback: Standard profile
         account_list = account_gen.generate_accounts_for_user(user.user_id, user.credit_score)
@@ -280,13 +397,17 @@ def _create_persona_profile_with_behaviors(
     return accounts
 
 
-def _create_high_utilization_profile(user, account_gen, transaction_gen, liability_gen):
+def _create_high_utilization_profile(user, account_gen, transaction_gen, liability_gen, high_util_reason: Optional[str] = None):
     """Create accounts for High Utilization persona.
     
     Behaviors ensured:
     1. Credit Utilization (high - primary)
     2. Subscription Detection (some subscriptions)
     3. Savings Behavior (low/no savings)
+    
+    Args:
+        high_util_reason: One of "utilization_50", "interest_charges", "minimum_payment_only", "is_overdue"
+                        If None, defaults to "utilization_50"
     """
     accounts = []
     
@@ -305,9 +426,25 @@ def _create_high_utilization_profile(user, account_gen, transaction_gen, liabili
     )
     accounts.append(checking)
     
-    # Credit card with HIGH utilization (50-95%)
+    # Credit card configuration based on reason
     credit_limit = random.uniform(3000, 15000)
-    utilization = random.uniform(0.55, 0.95)  # Above 50% threshold
+    
+    if high_util_reason == "utilization_50":
+        # High utilization (50-95%)
+        utilization = random.uniform(0.55, 0.95)
+    elif high_util_reason == "interest_charges":
+        # Lower utilization (<50%) so interest charges are the primary reason
+        utilization = random.uniform(0.25, 0.45)
+    elif high_util_reason == "minimum_payment_only":
+        # Lower utilization (<50%) so minimum payments are the primary reason
+        utilization = random.uniform(0.25, 0.45)
+    elif high_util_reason == "is_overdue":
+        # Lower utilization (<50%) so overdue status is the primary reason
+        utilization = random.uniform(0.25, 0.45)
+    else:
+        # Default: high utilization
+        utilization = random.uniform(0.55, 0.95)
+    
     balance = credit_limit * utilization
     
     credit_card = Account(
@@ -347,15 +484,21 @@ def _create_variable_income_profile(user, account_gen, transaction_gen, liabilit
     """Create accounts for Variable Income Budgeter persona.
     
     Behaviors ensured:
-    1. Income Stability (irregular - primary)
-    2. Savings Behavior (low/no savings buffer)
+    1. Income Stability (irregular - primary): Median pay gap > 45 days
+    2. Savings Behavior (low/no savings buffer): Cash-flow buffer < 1 month
     3. Credit Utilization (low to moderate - may use credit to smooth income)
+    
+    CRITICAL: Both conditions must be met:
+    - Median pay gap > 45 days (ensured by _generate_variable_income_transactions)
+    - Cash-flow buffer < 1 month (ensured by low checking balance relative to expenses)
     """
     accounts = []
     
-    # Checking with LOW buffer
+    # Checking with LOW buffer (< 1 month)
+    # Use a tighter range to ensure buffer < 1.0 month
     monthly_expenses = random.uniform(2000, 4000)
-    buffer_multiplier = random.uniform(0.3, 0.8)  # Less than 1 month
+    # Buffer multiplier: 0.2 to 0.8 months (ensures < 1 month)
+    buffer_multiplier = random.uniform(0.2, 0.8)  # Less than 1 month
     checking_balance = monthly_expenses * buffer_multiplier
     
     checking = Account(
@@ -418,6 +561,11 @@ def _create_subscription_heavy_profile(user, account_gen, transaction_gen, liabi
     1. Subscription Detection (many subscriptions - primary)
     2. Savings Behavior (may have savings but not priority)
     3. Credit Utilization (low to moderate)
+    
+    CRITICAL: Both conditions must be met:
+    - Recurring merchants ≥3 (ensured by _ensure_subscription_heavy_transactions)
+    - (Monthly recurring spend ≥$50 in 30d OR subscription spend share ≥10%)
+      (ensured by generating sufficient subscription transactions)
     """
     accounts = []
     
@@ -482,6 +630,11 @@ def _create_savings_builder_profile(user, account_gen, transaction_gen, liabilit
     1. Savings Behavior (active savings - primary)
     2. Credit Utilization (low <30%)
     3. Subscription Detection (some subscriptions)
+    
+    CRITICAL: Both conditions must be met:
+    - (Savings growth rate ≥2% OR net savings inflow ≥$200/month)
+      (ensured by _ensure_savings_builder_transactions)
+    - All card utilizations < 30% (if user has credit cards, ensured by low utilization; if no cards, trivially true)
     """
     accounts = []
     
@@ -501,6 +654,7 @@ def _create_savings_builder_profile(user, account_gen, transaction_gen, liabilit
     accounts.append(checking)
     
     # Savings account with GROWTH
+    # Use a reasonable starting balance to enable growth rate calculation
     savings_balance = random.uniform(5000, 30000)
     savings = Account(
         account_id=f"{user.user_id}_acct_001",
@@ -516,10 +670,12 @@ def _create_savings_builder_profile(user, account_gen, transaction_gen, liabilit
     )
     accounts.append(savings)
     
-    # Optional credit card with LOW utilization (<30%)
+    # Optional credit card with LOW utilization (<30%) if present
+    # If user has credit cards, all must be < 30% utilization
+    # If user has NO credit cards, condition is trivially met
     if random.random() < 0.7:
         credit_limit = random.uniform(5000, 20000)
-        utilization = random.uniform(0.05, 0.25)  # Below 30%
+        utilization = random.uniform(0.05, 0.25)  # Below 30% threshold (5-25%)
         balance = credit_limit * utilization
         
         credit_card = Account(
@@ -539,24 +695,42 @@ def _create_savings_builder_profile(user, account_gen, transaction_gen, liabilit
     return accounts
 
 
-def _create_lifestyle_inflator_profile(user, account_gen, transaction_gen, liability_gen):
+def _create_lifestyle_inflator_profile(user, account_gen, transaction_gen, liability_gen, lifestyle_inflator_reason: Optional[str] = None):
     """Create accounts for Lifestyle Inflator persona.
     
     Behaviors ensured:
-    1. Lifestyle Inflation (income up, savings flat - primary)
-    2. Savings Behavior (flat savings rate)
-    3. Credit Utilization (low to moderate)
+    1. Lifestyle Inflation (income up, savings flat OR income flat, savings down)
+    2. Savings Behavior (flat or decreasing savings rate)
+    3. Credit Utilization (low <50% to avoid Persona 1)
+    
+    CRITICAL: Two conditions possible:
+    - Condition 1: Income increased ≥15% AND savings rate flat/decreasing (±2%)
+    - Condition 2: Income stayed flat (±5%) AND savings rate decreased (< 0%)
+    
+    Args:
+        lifestyle_inflator_reason: One of "income_increasing", "income_flat"
+                                 If None, defaults to "income_increasing"
+    
+    To avoid matching higher priority personas:
+    - Credit utilization <50% (avoids Persona 1)
+    - Regular income with pay gaps ≤45 days (avoids Persona 2)
+    - Cash flow buffer ≥1 month (avoids Persona 2)
+    - Subscriptions <3 merchants OR low subscription spend (avoids Persona 3)
     """
     accounts = []
     
-    # Checking account (higher balance due to income increase)
+    # Checking account with GOOD buffer (≥1 month) to avoid Persona 2
+    monthly_expenses = random.uniform(3000, 5000)
+    buffer_multiplier = random.uniform(1.2, 2.5)  # 1.2-2.5 months buffer
+    checking_balance = monthly_expenses * buffer_multiplier
+    
     checking = Account(
         account_id=f"{user.user_id}_acct_000",
         user_id=user.user_id,
         type="checking",
         subtype="checking",
-        balance_available=random.uniform(3000, 10000),
-        balance_current=random.uniform(3000, 10000),
+        balance_available=checking_balance,
+        balance_current=checking_balance,
         credit_limit=None,
         iso_currency_code="USD",
         holder_category="personal",
@@ -564,8 +738,8 @@ def _create_lifestyle_inflator_profile(user, account_gen, transaction_gen, liabi
     )
     accounts.append(checking)
     
-    # Savings account (flat or minimal growth)
-    savings_balance = random.uniform(1000, 5000)
+    # Savings account (flat or minimal growth - savings rate stays flat)
+    savings_balance = random.uniform(2000, 8000)
     savings = Account(
         account_id=f"{user.user_id}_acct_001",
         user_id=user.user_id,
@@ -580,27 +754,690 @@ def _create_lifestyle_inflator_profile(user, account_gen, transaction_gen, liabi
     )
     accounts.append(savings)
     
-    # Optional credit card (may have increased spending)
-    if random.random() < 0.6:
-        credit_limit = random.uniform(5000, 20000)
-        utilization = random.uniform(0.15, 0.35)  # Low to moderate
-        balance = credit_limit * utilization
-        
-        credit_card = Account(
-            account_id=f"{user.user_id}_acct_002",
-            user_id=user.user_id,
-            type="credit_card",
-            subtype="credit_card",
-            balance_available=credit_limit - balance,
-            balance_current=balance,
-            credit_limit=credit_limit,
-            iso_currency_code="USD",
-            holder_category="personal",
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
-        )
-        accounts.append(credit_card)
+    # Credit card with LOW utilization (<50% to avoid Persona 1)
+    # This ensures Persona 5 won't be overridden by Persona 1
+    credit_limit = random.uniform(5000, 20000)
+    utilization = random.uniform(0.05, 0.45)  # Below 50% threshold
+    balance = credit_limit * utilization
+    
+    credit_card = Account(
+        account_id=f"{user.user_id}_acct_002",
+        user_id=user.user_id,
+        type="credit_card",
+        subtype="credit_card",
+        balance_available=credit_limit - balance,
+        balance_current=balance,
+        credit_limit=credit_limit,
+        iso_currency_code="USD",
+        holder_category="personal",
+        created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(365, 1825))
+    )
+    accounts.append(credit_card)
     
     return accounts
+
+
+def _generate_variable_income_transactions(account_id: str, account_type: str, transaction_gen):
+    """
+    Generate transactions for variable income persona with pay gaps >45 days.
+    
+    This ensures the median pay gap is >45 days to meet Persona 2 criteria.
+    
+    CRITICAL REQUIREMENTS:
+    - Median pay gap > 45 days (ensured by gaps of 50-90 days)
+    - Must have at least 2 deposits within the 180-day window for gap calculation
+    - Transactions are generated over 180 days to ensure proper median calculation
+    
+    The 180-day window is used for pay gap calculation, while 30-day window
+    uses buffer from the checking account balance.
+    """
+    from spendsense.ingest.merchants import INCOME_MERCHANTS, get_merchant_info
+    
+    if account_type != "checking":
+        # For non-checking accounts, use standard generation
+        return transaction_gen.generate_transactions_for_account(
+            account_id, account_type, months=5
+        )
+    
+    transactions_list = []
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=180)  # Use 180 days for better gap calculation
+    
+    # Generate irregular income deposits with gaps >45 days
+    # Strategy: Generate deposits with large gaps (50-90 days) over 180 days
+    # This ensures median gap >45 days when calculated over the full period
+    merchant_name = random.choice(INCOME_MERCHANTS)
+    merchant_info = get_merchant_info(merchant_name)
+    if not merchant_info:
+        merchant_info = {
+            "merchant_entity_id": "income_001",
+            "payment_channel": "other",
+            "category_primary": "Income"
+        }
+    
+    base_amount = random.uniform(2000, 6000)
+    
+    # Generate irregular income deposits over 180 days
+    # Start with first deposit
+    current_date = start_date
+    amount = base_amount * random.uniform(0.9, 1.1)
+    transactions_list.append({
+        "transaction_id": str(uuid.uuid4()),
+        "account_id": account_id,
+        "date": current_date,
+        "amount": -amount,
+        "merchant_name": merchant_name,
+        "merchant_entity_id": merchant_info["merchant_entity_id"],
+        "payment_channel": merchant_info["payment_channel"],
+        "category_primary": "Income",
+        "category_detailed": "Payroll",
+        "pending": False
+    })
+    
+    # Add 3-4 more deposits with gaps >45 days (50-90 days to ensure median > 45)
+    # Need at least 3 deposits total to calculate median gap reliably
+    num_deposits = random.randint(3, 4)
+    for i in range(num_deposits):
+        gap_days = random.randint(50, 90)  # Gap >45 days (ensures median > 45)
+        current_date = current_date + timedelta(days=gap_days)
+        
+        if current_date > end_date:
+            break
+        
+        amount = base_amount * random.uniform(0.8, 1.2)
+        transactions_list.append({
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": current_date,
+            "amount": -amount,
+            "merchant_name": merchant_name,
+            "merchant_entity_id": merchant_info["merchant_entity_id"],
+            "payment_channel": merchant_info["payment_channel"],
+            "category_primary": "Income",
+            "category_detailed": "Payroll",
+            "pending": False
+        })
+    
+    # Add regular spending transactions
+    # These will be used to calculate avg_monthly_expenses for buffer calculation
+    spending_txns = transaction_gen.generate_transactions_for_account(
+        account_id, account_type, months=6, income_frequency=None  # 6 months = 180 days
+    )
+    # Filter out income transactions from spending (we've already added them)
+    spending_txns = [t for t in spending_txns if t.get("amount", 0) > 0]
+    transactions_list.extend(spending_txns)
+    
+    return transactions_list
+
+
+def _ensure_subscription_heavy_transactions(account_id: str, transactions_list: List[Dict]) -> List[Dict]:
+    """
+    Ensure subscription-heavy transactions meet criteria:
+    - Recurring merchants ≥3 AND
+    - (Monthly recurring spend ≥$50 in 30d OR subscription spend share ≥10%)
+    
+    CRITICAL REQUIREMENTS:
+    - Must have ≥3 recurring merchants (ensured by selecting 4-5 merchants)
+    - Each merchant must have ≥3 transactions in 90 days with consistent cadence
+    - Monthly recurring spend must be ≥$50 OR subscription share ≥10%
+    
+    Strategy:
+    - Select 4-5 merchants (ensures ≥3)
+    - Generate monthly subscriptions for at least 3 months (90 days) to ensure detection
+    - Ensure total monthly spend ≥$50 (normalized)
+    - Control total spend to ensure subscription share could be ≥10% if needed
+    """
+    from spendsense.ingest.merchants import get_subscription_merchants, get_merchant_info
+    
+    subscription_merchants = get_subscription_merchants()
+    
+    # Remove ALL existing subscription transactions
+    transactions_list = [
+        t for t in transactions_list 
+        if t.get("category_detailed") != "Subscription" and t.get("merchant_name") not in subscription_merchants
+    ]
+    
+    # Select exactly 4-5 subscription merchants (ensures ≥3)
+    num_merchants = random.randint(4, min(5, len(subscription_merchants)))
+    selected_merchants = random.sample(subscription_merchants, num_merchants)
+    
+    # Calculate target monthly spend per merchant to meet $50/month total
+    # Use a range that ensures we exceed $50/month
+    target_monthly_total = random.uniform(55.0, 100.0)  # $55-100/month to ensure ≥$50 threshold
+    monthly_per_merchant = target_monthly_total / num_merchants
+    
+    # Add subscriptions for selected merchants
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=180)  # Generate for 180 days to ensure detection
+    
+    for merchant_name in selected_merchants:
+        merchant_info = get_merchant_info(merchant_name)
+        if not merchant_info:
+            continue
+        
+        # Generate monthly subscription charges
+        # Ensure each merchant contributes enough to meet threshold
+        monthly_amount = random.uniform(monthly_per_merchant * 0.9, monthly_per_merchant * 1.2)
+        
+        # Generate subscriptions for at least 3 months (90 days) to ensure detection
+        # Generate monthly subscriptions going back 6 months (180 days) for better detection
+        num_months = 6
+        for month_offset in range(num_months):
+            # Calculate date for this month's subscription
+            # Use consistent monthly cadence (~30 days apart)
+            sub_date = end_date - timedelta(days=(month_offset * 30) + random.randint(1, 7))
+            
+            # Only generate if within the 180-day window
+            if sub_date < start_date:
+                continue
+            
+            subscription_txn = {
+                "transaction_id": str(uuid.uuid4()),
+                "account_id": account_id,
+                "date": sub_date,
+                "amount": monthly_amount,
+                "merchant_name": merchant_name,
+                "merchant_entity_id": merchant_info["merchant_entity_id"],
+                "payment_channel": merchant_info["payment_channel"],
+                "category_primary": merchant_info["category_primary"],
+                "category_detailed": "Subscription",
+                "pending": False
+            }
+            transactions_list.append(subscription_txn)
+    
+    return transactions_list
+
+
+def _ensure_savings_builder_transactions(account_id: str, transactions_list: List[Dict], starting_balance: float) -> List[Dict]:
+    """
+    Ensure savings builder transactions meet criteria:
+    - (Savings growth rate ≥2% OR net savings inflow ≥$200/month) AND
+    - All card utilizations < 30% (handled in account creation)
+    
+    CRITICAL REQUIREMENTS:
+    - Must meet at least one savings condition:
+      1. Growth rate ≥2%: net_inflow >= starting_balance * 0.02
+      2. OR net savings inflow ≥$200/month (normalized)
+    - Credit card utilization < 30% (ensured in _create_savings_builder_profile)
+    
+    Strategy:
+    - Calculate required net inflow based on starting balance to ensure ≥2% growth
+    - Ensure monthly net inflow ≥$200 (normalized)
+    - Generate monthly transfers that meet both thresholds
+    """
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=180)  # Use 180 days for better calculation
+    
+    # Calculate target monthly inflow (normalized to monthly)
+    target_monthly_inflow = 200.0
+    
+    # For 180-day window, need at least: (200 / 30) * 180 = 1200 total net inflow
+    # For 30-day window, need at least: 200 total net inflow
+    # Use the larger requirement to ensure both windows meet threshold
+    target_total_inflow_180d = (target_monthly_inflow / 30) * 180  # $1200 for 180d window
+    
+    # Calculate growth rate requirement
+    # Growth rate = (net_inflow / starting_balance) * 100
+    # where starting_balance = current_balance - net_inflow
+    # For ≥2%: net_inflow >= starting_balance * 0.02
+    # net_inflow >= (current_balance - net_inflow) * 0.02
+    # net_inflow >= current_balance * 0.02 - net_inflow * 0.02
+    # net_inflow * 1.02 >= current_balance * 0.02
+    # net_inflow >= current_balance * 0.02 / 1.02 ≈ current_balance * 0.0196
+    # Use a conservative estimate: current_balance * 0.02 (slightly higher than needed)
+    target_growth_inflow = starting_balance * 0.02
+    
+    # Use the larger of the two requirements to ensure both conditions are met
+    # Add a buffer to ensure we exceed thresholds
+    target_net_inflow = max(target_total_inflow_180d, target_growth_inflow) * 1.1  # 10% buffer
+    
+    # Remove existing savings transactions (deposits = negative amounts)
+    transactions_list = [t for t in transactions_list if t.get("amount", 0) >= 0]
+    
+    # Calculate number of months (6 months = 180 days)
+    num_months = 6
+    monthly_transfer = target_net_inflow / num_months
+    
+    # Ensure monthly transfer is at least $200/month (normalized)
+    # This ensures both 30d and 180d windows meet the $200/month threshold
+    min_monthly_transfer = target_monthly_inflow
+    monthly_transfer = max(monthly_transfer, min_monthly_transfer)
+    
+    # Generate monthly transfers for 6 months
+    for month_offset in range(num_months):
+        transfer_date = start_date + timedelta(days=(month_offset * 30) + random.randint(1, 15))
+        if transfer_date > end_date:
+            break
+        
+        transfer_txn = {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": transfer_date,
+            "amount": -monthly_transfer,  # Negative = deposit into savings
+            "merchant_name": "Transfer from Checking",
+            "merchant_entity_id": "transfer_001",
+            "payment_channel": "other",
+            "category_primary": "Transfer",
+            "category_detailed": "Savings",
+            "pending": False
+        }
+        transactions_list.append(transfer_txn)
+    
+    return transactions_list
+
+
+def _ensure_lifestyle_inflator_income(account_id: str, transactions_list: List[Dict]) -> List[Dict]:
+    """
+    Ensure lifestyle inflator has income increase ≥15% over 180 days.
+    Generates income transactions that increase over time.
+    Uses REGULAR income pattern (biweekly/monthly) to avoid Persona 2.
+    
+    IMPORTANT: Must ensure income increases by at least 15% from first half to second half.
+    """
+    from spendsense.ingest.merchants import INCOME_MERCHANTS, get_merchant_info
+    
+    # Remove existing income transactions
+    transactions_list = [t for t in transactions_list if t.get("amount", 0) >= 0]
+    
+    merchant_name = random.choice(INCOME_MERCHANTS)
+    merchant_info = get_merchant_info(merchant_name)
+    if not merchant_info:
+        merchant_info = {
+            "merchant_entity_id": "income_001",
+            "payment_channel": "other",
+            "category_primary": "Income"
+        }
+    
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=180)
+    
+    # Generate income with increasing trend
+    # First half: lower income, second half: higher income (≥15% increase)
+    # Use a BASE amount that ensures we'll get at least 15% increase
+    base_amount = random.uniform(3000, 5000)
+    # Use a larger increase factor to ensure we meet the threshold
+    increase_factor = random.uniform(1.18, 1.35)  # 18-35% increase (well above 15% threshold)
+    
+    # Generate REGULAR biweekly income (not variable - gaps ≤45 days)
+    # First 6 payments (first 90 days): lower amount
+    # Last 7 payments (last 90 days): higher amount
+    current_date = start_date
+    payment_count = 0
+    
+    while current_date <= end_date:
+        if payment_count < 6:
+            # First half: base amount (with small variance)
+            amount = base_amount * random.uniform(0.98, 1.02)  # Very tight variance
+        else:
+            # Second half: increased amount (well above 15% threshold)
+            amount = base_amount * increase_factor * random.uniform(0.98, 1.02)  # Very tight variance
+        
+        transactions_list.append({
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": current_date,
+            "amount": -amount,  # Negative = deposit
+            "merchant_name": merchant_name,
+            "merchant_entity_id": merchant_info["merchant_entity_id"],
+            "payment_channel": merchant_info["payment_channel"],
+            "category_primary": "Income",
+            "category_detailed": "Payroll",
+            "pending": False
+        })
+        
+        current_date = current_date + timedelta(days=14)  # Biweekly (regular pattern)
+        payment_count += 1
+    
+    return transactions_list
+
+
+def _remove_all_subscriptions(account_id: str, transactions_list: List[Dict]) -> List[Dict]:
+    """
+    Remove ALL subscription transactions to start clean.
+    This ensures we have full control over subscription count.
+    """
+    from spendsense.ingest.merchants import get_subscription_merchants
+    
+    subscription_merchants = get_subscription_merchants()
+    
+    # Remove transactions that are subscriptions
+    filtered_transactions = []
+    for txn in transactions_list:
+        # Remove if category is Subscription
+        if txn.get("category_detailed") == "Subscription":
+            continue
+        # Remove if merchant is in subscription merchants list
+        if txn.get("merchant_name") in subscription_merchants:
+            continue
+        # Remove if category suggests subscription (streaming, recurring services)
+        if txn.get("category_primary") in ["Entertainment", "Software"]:
+            merchant_name = txn.get("merchant_name", "").lower()
+            if any(keyword in merchant_name for keyword in ["netflix", "spotify", "hulu", "disney", "apple", "amazon prime", "microsoft"]):
+                continue
+        filtered_transactions.append(txn)
+    
+    return filtered_transactions
+
+
+def _ensure_regular_income_pattern(account_id: str, transactions_list: List[Dict]) -> List[Dict]:
+    """
+    Ensure income has regular pattern (pay gaps ≤45 days) to avoid Persona 2.
+    This is already handled by biweekly income in _ensure_lifestyle_inflator_income,
+    but we verify no gaps >45 days exist.
+    """
+    # Income transactions are already regular (biweekly) from _ensure_lifestyle_inflator_income
+    # This function is a placeholder for any additional validation needed
+    return transactions_list
+
+
+def _limit_subscriptions_for_persona5(account_id: str, transactions_list: List[Dict]) -> List[Dict]:
+    """
+    Limit subscriptions to avoid Persona 3:
+    - Remove ALL subscription-like transactions
+    - Add NO subscriptions at all to ensure Persona 3 doesn't match
+    
+    IMPORTANT: For Persona 5, we want to avoid Persona 3 entirely.
+    So we'll remove ALL subscription transactions completely.
+    """
+    from spendsense.ingest.merchants import get_subscription_merchants
+    
+    subscription_merchants = get_subscription_merchants()
+    
+    # Remove ALL subscription transactions - be very aggressive
+    filtered_transactions = []
+    for txn in transactions_list:
+        # Remove if category is Subscription
+        if txn.get("category_detailed") == "Subscription":
+            continue
+        # Remove if merchant is in subscription merchants list
+        if txn.get("merchant_name") in subscription_merchants:
+            continue
+        # Remove if category suggests subscription (streaming, recurring services)
+        if txn.get("category_primary") in ["Entertainment", "Software", "General Merchandise"]:
+            merchant_name = txn.get("merchant_name", "").lower()
+            subscription_keywords = [
+                "netflix", "spotify", "hulu", "disney", "apple", "amazon prime", 
+                "microsoft", "adobe", "google", "youtube", "streaming", "subscription",
+                "recurring", "monthly", "annual", "premium", "pro", "plus"
+            ]
+            if any(keyword in merchant_name for keyword in subscription_keywords):
+                continue
+        filtered_transactions.append(txn)
+    
+    return filtered_transactions
+
+
+def _ensure_flat_savings_rate(account_id: str, transactions_list: List[Dict], starting_balance: float) -> List[Dict]:
+    """
+    Ensure savings rate stays flat (≤2% change) to meet Persona 5 criteria.
+    Savings rate should not increase significantly even as income increases.
+    
+    IMPORTANT: To keep savings rate flat/decreasing, we need to ensure that
+    savings transfers stay roughly the same or decrease slightly from first half to second half.
+    """
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=180)
+    
+    # Calculate target: keep savings rate flat or slightly decreasing
+    # First half: some savings activity
+    # Second half: keep same or slightly less savings activity (to maintain flat rate)
+    
+    # Remove existing savings transactions
+    transactions_list = [t for t in transactions_list if t.get("amount", 0) >= 0]
+    
+    # Add minimal savings transfers that stay roughly constant or decrease slightly
+    # This ensures savings rate doesn't increase significantly
+    # Use a slightly decreasing pattern to ensure savings_rate_change_percent ≤ 2%
+    monthly_transfer_first_half = random.uniform(150, 250)  # Small transfers
+    # Second half: same or slightly less (to keep rate flat or decreasing)
+    monthly_transfer_second_half = monthly_transfer_first_half * random.uniform(0.95, 1.00)  # Same or slightly less
+    
+    # First half (first 90 days) - 3 months
+    for month_offset in range(3):
+        transfer_date = start_date + timedelta(days=(month_offset * 30) + random.randint(1, 15))
+        if transfer_date > end_date:
+            break
+        
+        transfer_txn = {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": transfer_date,
+            "amount": -monthly_transfer_first_half,  # Negative = deposit
+            "merchant_name": "Transfer from Checking",
+            "merchant_entity_id": "transfer_001",
+            "payment_channel": "other",
+            "category_primary": "Transfer",
+            "category_detailed": "Savings",
+            "pending": False
+        }
+        transactions_list.append(transfer_txn)
+    
+    # Second half (last 90 days) - 3 months, same or slightly less
+    for month_offset in range(3, 6):
+        transfer_date = start_date + timedelta(days=(month_offset * 30) + random.randint(1, 15))
+        if transfer_date > end_date:
+            break
+        
+        transfer_txn = {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": transfer_date,
+            "amount": -monthly_transfer_second_half,  # Negative = deposit
+            "merchant_name": "Transfer from Checking",
+            "merchant_entity_id": "transfer_001",
+            "payment_channel": "other",
+            "category_primary": "Transfer",
+            "category_detailed": "Savings",
+            "pending": False
+        }
+        transactions_list.append(transfer_txn)
+    
+    return transactions_list
+
+
+def _ensure_flat_income_with_decreasing_savings(account_id: str, transactions_list: List[Dict]) -> List[Dict]:
+    """
+    Ensure income stays flat (±5%) for Lifestyle Inflator Condition 2.
+    Generates income transactions that stay roughly constant.
+    Uses REGULAR income pattern (biweekly/monthly) to avoid Persona 2.
+    
+    CRITICAL REQUIREMENTS:
+    - Income change must be between -5% and +5% (flat)
+    - Income pattern must be regular (pay gaps ≤45 days) to avoid Persona 2
+    """
+    from spendsense.ingest.merchants import INCOME_MERCHANTS, get_merchant_info
+    
+    # Remove existing income transactions
+    transactions_list = [t for t in transactions_list if t.get("amount", 0) >= 0]
+    
+    merchant_name = random.choice(INCOME_MERCHANTS)
+    merchant_info = get_merchant_info(merchant_name)
+    if not merchant_info:
+        merchant_info = {
+            "merchant_entity_id": "income_001",
+            "payment_channel": "other",
+            "category_primary": "Income"
+        }
+    
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=180)
+    
+    # Generate income with FLAT trend (within ±5%)
+    # Use a BASE amount that stays roughly constant
+    base_amount = random.uniform(3000, 5000)
+    # Small variance to ensure income stays within ±5%
+    variance_factor = random.uniform(0.97, 1.03)  # ±3% variance (within ±5% threshold)
+    
+    # Generate REGULAR biweekly income (not variable - gaps ≤45 days)
+    current_date = start_date
+    payment_count = 0
+    
+    while current_date <= end_date:
+        # Keep income roughly flat (small variance)
+        amount = base_amount * variance_factor * random.uniform(0.99, 1.01)  # Very tight variance
+        
+        transactions_list.append({
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": current_date,
+            "amount": -amount,  # Negative = deposit
+            "merchant_name": merchant_name,
+            "merchant_entity_id": merchant_info["merchant_entity_id"],
+            "payment_channel": merchant_info["payment_channel"],
+            "category_primary": "Income",
+            "category_detailed": "Payroll",
+            "pending": False
+        })
+        
+        current_date = current_date + timedelta(days=14)  # Biweekly (regular pattern)
+        payment_count += 1
+    
+    return transactions_list
+
+
+def _ensure_decreasing_savings_rate(account_id: str, transactions_list: List[Dict], starting_balance: float) -> List[Dict]:
+    """
+    Ensure savings rate decreases (< 0%) for Lifestyle Inflator Condition 2.
+    Savings rate should decrease over the period.
+    
+    CRITICAL REQUIREMENTS:
+    - Savings rate change must be < 0% (decreasing)
+    - First half: higher savings transfers
+    - Second half: lower savings transfers (or withdrawals)
+    """
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=180)
+    
+    # Calculate target: savings rate must decrease
+    # First half: some savings activity
+    # Second half: less savings activity (or withdrawals) to decrease rate
+    
+    # Remove existing savings transactions
+    transactions_list = [t for t in transactions_list if t.get("amount", 0) >= 0]
+    
+    # Add savings transfers that decrease over time
+    # First half: moderate savings transfers
+    monthly_transfer_first_half = random.uniform(200, 400)  # Moderate transfers
+    # Second half: significantly less (or even withdrawals) to ensure rate decreases
+    # Use a factor that ensures savings_rate_change_percent < 0
+    decrease_factor = random.uniform(0.3, 0.7)  # 30-70% of first half (ensures decrease)
+    monthly_transfer_second_half = monthly_transfer_first_half * decrease_factor
+    
+    # First half (first 90 days) - 3 months
+    for month_offset in range(3):
+        transfer_date = start_date + timedelta(days=(month_offset * 30) + random.randint(1, 15))
+        if transfer_date > end_date:
+            break
+        
+        transfer_txn = {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": transfer_date,
+            "amount": -monthly_transfer_first_half,  # Negative = deposit
+            "merchant_name": "Transfer from Checking",
+            "merchant_entity_id": "transfer_001",
+            "payment_channel": "other",
+            "category_primary": "Transfer",
+            "category_detailed": "Savings",
+            "pending": False
+        }
+        transactions_list.append(transfer_txn)
+    
+    # Second half (last 90 days) - 3 months, significantly less
+    for month_offset in range(3, 6):
+        transfer_date = start_date + timedelta(days=(month_offset * 30) + random.randint(1, 15))
+        if transfer_date > end_date:
+            break
+        
+        transfer_txn = {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": transfer_date,
+            "amount": -monthly_transfer_second_half,  # Negative = deposit (smaller amount)
+            "merchant_name": "Transfer from Checking",
+            "merchant_entity_id": "transfer_001",
+            "payment_channel": "other",
+            "category_primary": "Transfer",
+            "category_detailed": "Savings",
+            "pending": False
+        }
+        transactions_list.append(transfer_txn)
+    
+    return transactions_list
+
+
+def _ensure_interest_charges(account_id: str, transactions_list: List[Dict]) -> List[Dict]:
+    """
+    Ensure interest charges are present in credit card transactions.
+    Adds interest charge transactions that will be detected by the credit feature.
+    """
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=150)  # 5 months
+    
+    # Add interest charges (monthly)
+    # Interest charges typically appear as positive amounts (charges) on credit cards
+    for month_offset in range(5):
+        charge_date = end_date - timedelta(days=(month_offset * 30) + random.randint(1, 28))
+        if charge_date < start_date:
+            continue
+        
+        # Interest charge amount (typically 1-3% of balance)
+        interest_amount = random.uniform(15, 150)
+        
+        interest_txn = {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": charge_date,
+            "amount": interest_amount,  # Positive = charge on credit card
+            "merchant_name": "Finance Charge",
+            "merchant_entity_id": "interest_001",
+            "payment_channel": "other",
+            "category_primary": "Banking",
+            "category_detailed": "Interest",
+            "pending": False
+        }
+        transactions_list.append(interest_txn)
+    
+    return transactions_list
+
+
+def _ensure_minimum_payment_transactions(
+    account_id: str, 
+    transactions_list: List[Dict], 
+    minimum_payment_amount: float
+) -> List[Dict]:
+    """
+    Ensure payment transactions match minimum payment amount exactly.
+    This ensures the minimum-payment-only detection works correctly.
+    """
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=150)  # 5 months
+    
+    # Remove existing payment transactions (negative amounts)
+    transactions_list = [t for t in transactions_list if t.get("amount", 0) >= 0]
+    
+    # Add monthly minimum payments
+    for month_offset in range(5):
+        payment_date = end_date - timedelta(days=(month_offset * 30) + random.randint(1, 28))
+        if payment_date < start_date:
+            continue
+        
+        # Payment amount exactly matches minimum (negative = payment on credit card)
+        payment_txn = {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "date": payment_date,
+            "amount": -minimum_payment_amount,  # Negative = payment
+            "merchant_name": "Credit Card Payment",
+            "merchant_entity_id": "payment_001",
+            "payment_channel": "other",
+            "category_primary": "Transfer",
+            "category_detailed": "Payment",
+            "pending": False
+        }
+        transactions_list.append(payment_txn)
+    
+    return transactions_list
 
 
 def generate_persona_distributed_users(num_users: int = 100):
@@ -648,12 +1485,38 @@ def generate_persona_distributed_users(num_users: int = 100):
     
     user_number = 1
     
+    # High utilization reasons for distribution
+    high_util_reasons = ["utilization_50", "interest_charges", "minimum_payment_only", "is_overdue"]
+    
+    # Lifestyle inflator reasons for distribution
+    lifestyle_inflator_reasons = ["income_increasing", "income_flat"]
+    
     # Generate 15 pure persona users + 5 multi-persona users per persona
     for persona in personas:
         print(f"Generating users for {persona} persona...")
         
-        # First 13 users: pure persona with consent
-        for i in range(13):
+        # For high utilization persona, distribute users across the 4 reasons
+        if persona == "high_utilization":
+            # First 12 users: pure persona with consent, distributed across 4 reasons (3 per reason)
+            reason_index = 0
+            for i in range(12):
+                reason = high_util_reasons[reason_index % len(high_util_reasons)]
+                print(f"  [{user_number}/{num_users}] {persona} (pure, consent, reason: {reason})...", end="\r")
+                create_user_for_persona(
+                    session, user_number, persona, should_consent=True,
+                    user_gen=user_gen, account_gen=account_gen,
+                    transaction_gen=transaction_gen, liability_gen=liability_gen,
+                    multi_persona_overlay=None,
+                    high_util_reason=reason
+                )
+                user_number += 1
+                reason_index += 1
+                
+                # Commit every 5 users
+                if user_number % 5 == 0:
+                    session.commit()
+            
+            # Next 1 user: pure persona with consent, default reason
             print(f"  [{user_number}/{num_users}] {persona} (pure, consent)...", end="\r")
             create_user_for_persona(
                 session, user_number, persona, should_consent=True,
@@ -662,10 +1525,50 @@ def generate_persona_distributed_users(num_users: int = 100):
                 multi_persona_overlay=None
             )
             user_number += 1
+        elif persona == "lifestyle_inflator":
+            # First 12 users: pure persona with consent, distributed across 2 reasons (6 per reason)
+            reason_index = 0
+            for i in range(12):
+                reason = lifestyle_inflator_reasons[reason_index % len(lifestyle_inflator_reasons)]
+                print(f"  [{user_number}/{num_users}] {persona} (pure, consent, reason: {reason})...", end="\r")
+                create_user_for_persona(
+                    session, user_number, persona, should_consent=True,
+                    user_gen=user_gen, account_gen=account_gen,
+                    transaction_gen=transaction_gen, liability_gen=liability_gen,
+                    multi_persona_overlay=None,
+                    lifestyle_inflator_reason=reason
+                )
+                user_number += 1
+                reason_index += 1
+                
+                # Commit every 5 users
+                if user_number % 5 == 0:
+                    session.commit()
             
-            # Commit every 5 users
-            if user_number % 5 == 0:
-                session.commit()
+            # Next 1 user: pure persona with consent, default reason
+            print(f"  [{user_number}/{num_users}] {persona} (pure, consent)...", end="\r")
+            create_user_for_persona(
+                session, user_number, persona, should_consent=True,
+                user_gen=user_gen, account_gen=account_gen,
+                transaction_gen=transaction_gen, liability_gen=liability_gen,
+                multi_persona_overlay=None
+            )
+            user_number += 1
+        else:
+            # First 13 users: pure persona with consent
+            for i in range(13):
+                print(f"  [{user_number}/{num_users}] {persona} (pure, consent)...", end="\r")
+                create_user_for_persona(
+                    session, user_number, persona, should_consent=True,
+                    user_gen=user_gen, account_gen=account_gen,
+                    transaction_gen=transaction_gen, liability_gen=liability_gen,
+                    multi_persona_overlay=None
+                )
+                user_number += 1
+                
+                # Commit every 5 users
+                if user_number % 5 == 0:
+                    session.commit()
         
         # Next 5 users: multi-persona combinations (consent)
         overlay_persona = multi_persona_combos.get(persona, None)

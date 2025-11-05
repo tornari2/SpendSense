@@ -25,7 +25,7 @@ def save_persona_history(
     Save persona assignment to PersonaHistory table.
     
     Prevents duplicate entries by checking if the persona has changed
-    since the last assignment.
+    since the last assignment. Only saves when persona actually changes.
     
     Args:
         assignment: PersonaAssignment to save
@@ -33,7 +33,7 @@ def save_persona_history(
         skip_duplicates: If True, skip saving if persona hasn't changed (default: True)
     
     Returns:
-        PersonaHistory record that was created, or None if skipped due to duplicate
+        PersonaHistory record that was created, or existing record if skipped due to duplicate
     """
     close_session = False
     if session is None:
@@ -41,7 +41,7 @@ def save_persona_history(
         close_session = True
     
     try:
-        # Check for duplicate if skip_duplicates is enabled
+        # Always check for existing assignment to prevent duplicates
         if skip_duplicates:
             latest = get_latest_persona(
                 user_id=assignment.user_id,
@@ -49,14 +49,25 @@ def save_persona_history(
                 session=session
             )
             
-            # If latest persona matches current assignment, skip saving
+            # If latest persona matches current assignment, check if signals_used has changed
             if latest is not None:
                 current_persona = assignment.persona_id or "none"
                 if latest.persona == current_persona:
-                    # Persona hasn't changed, return existing record
+                    # Persona hasn't changed - but update signals_used if they differ
+                    # This ensures signals_used always matches the current Detected Signals
+                    # Compare signals dicts properly (they might be stored as JSON)
+                    import json
+                    latest_signals_str = json.dumps(latest.signals or {}, sort_keys=True)
+                    assignment_signals_str = json.dumps(assignment.signals_used or {}, sort_keys=True)
+                    
+                    if latest_signals_str != assignment_signals_str:
+                        latest.signals = assignment.signals_used
+                        latest.assigned_at = assignment.assigned_at
+                        session.add(latest)
+                        session.flush()
+                        session.refresh(latest)
                     # Ensure the record is properly attached to this session
                     if latest not in session:
-                        # Merge the record into this session if it came from a different session
                         latest = session.merge(latest)
                     return latest
         
@@ -70,7 +81,9 @@ def save_persona_history(
         )
         
         session.add(history_record)
-        session.commit()
+        # Don't commit here - let the caller commit
+        # This prevents duplicate commits and allows transactional control
+        session.flush()  # Flush to get ID but don't commit yet
         session.refresh(history_record)
         
         return history_record

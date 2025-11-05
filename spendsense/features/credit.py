@@ -13,6 +13,7 @@ Features computed:
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Dict
 from spendsense.ingest.schema import Account, Liability, Transaction
 
@@ -56,10 +57,15 @@ def calculate_credit_utilization(
     """
     Calculate credit utilization and payment behavior metrics.
     
+    Utilization is calculated based on transactions within the time window:
+    - For each account, track balance changes over the window
+    - Calculate peak/average utilization based on transactions in the window
+    - This ensures 30-day and 180-day windows show different utilization values
+    
     Args:
         credit_accounts: List of credit card accounts
         liabilities: List of liability records for credit cards
-        credit_transactions: Transactions for credit cards
+        credit_transactions: Transactions for credit cards within the window
         window_days: Size of the time window (30 or 180 days)
     
     Returns:
@@ -79,13 +85,31 @@ def calculate_credit_utilization(
             window_days=window_days
         )
     
-    # Calculate per-card utilization
+    # Calculate per-card utilization based on window transactions
     utilizations = {}
     utilization_values = []
     
     for account in credit_accounts:
         if account.credit_limit and account.credit_limit > 0:
-            util_pct = (account.balance_current / account.credit_limit) * 100
+            # Get transactions for this account in the window
+            account_transactions = [
+                t for t in credit_transactions 
+                if t.account_id == account.account_id
+            ]
+            
+            # Calculate utilization based on window transactions
+            if account_transactions:
+                # Calculate peak balance over the window
+                # Start with current balance and work backwards through transactions
+                # Or use current balance as baseline and track changes
+                peak_balance = _calculate_peak_balance_in_window(
+                    account, account_transactions, window_days
+                )
+                util_pct = (peak_balance / account.credit_limit) * 100
+            else:
+                # No transactions in window, use current balance
+                util_pct = (account.balance_current / account.credit_limit) * 100
+            
             utilizations[account.account_id] = util_pct
             utilization_values.append(util_pct)
     
@@ -120,6 +144,79 @@ def calculate_credit_utilization(
         num_credit_cards=len(credit_accounts),
         window_days=window_days
     )
+
+
+def _calculate_peak_balance_in_window(
+    account: Account,
+    transactions: List[Transaction],
+    window_days: int
+) -> float:
+    """
+    Calculate peak balance in the window based on transactions.
+    
+    For credit cards:
+    - Positive amounts = charges (increase balance)
+    - Negative amounts = payments (decrease balance)
+    
+    We'll calculate the balance at each point in the window and return the peak.
+    
+    Args:
+        account: Credit account
+        transactions: Transactions in the window (sorted by date)
+        window_days: Size of the window
+    
+    Returns:
+        Peak balance during the window
+    """
+    if not transactions:
+        return account.balance_current
+    
+    # Sort transactions by date
+    sorted_txns = sorted(transactions, key=lambda t: _to_datetime(t.date))
+    
+    # Start with current balance and work backwards
+    # Or calculate forward from the start of the window
+    # For simplicity, we'll use the current balance as reference point
+    # and calculate what the balance would have been at different points
+    
+    # Alternative: Calculate peak by tracking balance changes
+    # Start balance = current balance - sum of all transactions in window
+    # Then add transactions chronologically to find peak
+    
+    current_balance = account.balance_current
+    
+    # If we have transactions, calculate what balance was at start of window
+    # Sum of transactions tells us net change during window
+    net_change = sum(t.amount for t in sorted_txns)
+    
+    # Start balance = current balance - net change
+    start_balance = current_balance - net_change
+    
+    # Track balance over time to find peak
+    peak_balance = start_balance
+    running_balance = start_balance
+    
+    for txn in sorted_txns:
+        running_balance += txn.amount
+        if running_balance > peak_balance:
+            peak_balance = running_balance
+    
+    # Ensure peak doesn't exceed credit limit
+    if account.credit_limit:
+        peak_balance = min(peak_balance, account.credit_limit)
+    
+    return max(peak_balance, 0.0)  # Balance can't be negative
+
+
+def _to_datetime(date_obj):
+    """Convert various date formats to datetime."""
+    if isinstance(date_obj, datetime):
+        return date_obj
+    elif isinstance(date_obj, str):
+        return datetime.strptime(date_obj, '%Y-%m-%d')
+    else:
+        # Assume it's a date object
+        return datetime.combine(date_obj, datetime.min.time())
 
 
 def _detect_minimum_payment_only(

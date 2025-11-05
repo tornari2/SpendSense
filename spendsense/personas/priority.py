@@ -74,43 +74,59 @@ def resolve_persona_priority(
     return persona_id, reasoning, signals_used
 
 
-def evaluate_all_personas(signals_30d, signals_180d=None):
+def evaluate_all_personas(signals_30d, signals_180d=None, window_days=30):
     """
     Evaluate all persona criteria and return matching personas.
     
     Args:
         signals_30d: SignalSet for 30-day window (required)
         signals_180d: SignalSet for 180-day window (optional, for Persona 5)
+        window_days: Window size being evaluated (30 or 180)
     
     Returns:
         List of tuples (persona_id, reasoning, signals_used) for matching personas
     """
     matching_personas = []
     
-    # Persona 1: High Utilization (uses 30d signals)
-    matches, reasoning, signals = check_persona1_high_utilization(signals_30d)
+    # Determine which signals to use based on window
+    # For 180d window, prefer 180d signals; for 30d window, use 30d signals
+    primary_signals = signals_180d if window_days == 180 and signals_180d else signals_30d
+    
+    # Persona 1: High Utilization (uses window-specific signals)
+    matches, reasoning, signals = check_persona1_high_utilization(primary_signals)
     if matches:
         matching_personas.append(('persona1_high_utilization', reasoning, signals))
     
-    # Persona 2: Variable Income Budgeter (uses 30d signals)
-    matches, reasoning, signals = check_persona2_variable_income(signals_30d)
+    # Persona 2: Variable Income Budgeter (uses window-specific signals for buffer, 180d for pay gap)
+    # When evaluating for 180d window, use 180d signals for buffer; for 30d window, use 30d signals
+    if window_days == 180 and signals_180d:
+        signals_for_buffer = signals_180d
+    else:
+        signals_for_buffer = signals_30d
+    matches, reasoning, signals = check_persona2_variable_income(signals_for_buffer, signals_180d)
     if matches:
         matching_personas.append(('persona2_variable_income', reasoning, signals))
     
-    # Persona 3: Subscription-Heavy (prefer 30d, fallback to 180d)
-    signals_to_use = signals_30d if signals_30d.subscriptions.recurring_merchant_count >= 3 else (signals_180d or signals_30d)
+    # Persona 3: Subscription-Heavy (use window-specific signals for the window being evaluated)
+    # Always use signals from the window being evaluated to ensure signals_used matches Detected Signals
+    signals_to_use = signals_180d if window_days == 180 and signals_180d else signals_30d
     matches, reasoning, signals = check_persona3_subscription_heavy(signals_to_use)
     if matches:
         matching_personas.append(('persona3_subscription_heavy', reasoning, signals))
     
-    # Persona 4: Savings Builder (uses 30d signals)
-    matches, reasoning, signals = check_persona4_savings_builder(signals_30d)
+    # Persona 4: Savings Builder (use appropriate signals for the window being evaluated)
+    matches, reasoning, signals = check_persona4_savings_builder(primary_signals)
     if matches:
         matching_personas.append(('persona4_savings_builder', reasoning, signals))
     
-    # Persona 5: Lifestyle Inflator (requires 180d signals)
-    if signals_180d:
-        matches, reasoning, signals = check_persona5_lifestyle_inflator(signals_180d)
+    # Persona 5: Lifestyle Inflator (uses 90-day lookback for 30d window, 180d for 180d window)
+    # Similar to Persona 3, Persona 5 can be evaluated for both 30d and 180d windows
+    # For 30d window: uses lifestyle signals calculated with 90-day lookback
+    # For 180d window: uses lifestyle signals calculated with 180-day window
+    signals_to_use = signals_180d if window_days == 180 and signals_180d else signals_30d
+    # Check if lifestyle signals are available (they're calculated for both 30d and 180d now)
+    if signals_to_use and signals_to_use.lifestyle:
+        matches, reasoning, signals = check_persona5_lifestyle_inflator(signals_to_use)
         if matches:
             matching_personas.append(('persona5_lifestyle_inflator', reasoning, signals))
     

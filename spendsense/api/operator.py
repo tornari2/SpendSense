@@ -132,6 +132,18 @@ def get_user_detail(
         save_history=True
     )
     
+    # Determine primary persona: 30d persona if available, otherwise 180d persona
+    primary_persona_assignment = persona_assignment_30d
+    if not persona_assignment_30d.persona_id and persona_assignment_180d.persona_id:
+        primary_persona_assignment = persona_assignment_180d
+    
+    # Determine which window is the primary persona
+    primary_window_days = None
+    if persona_assignment_30d.persona_id:
+        primary_window_days = 30
+    elif persona_assignment_180d.persona_id:
+        primary_window_days = 180
+    
     # Ensure session sees committed changes from assign_persona
     # assign_persona commits internally, but we need to refresh the session
     session.flush()  # Flush any pending changes
@@ -156,7 +168,8 @@ def get_user_detail(
             "persona": ph.persona,
             "window_days": ph.window_days,
             "assigned_at": ph.assigned_at.isoformat(),
-            "signals": ph.signals
+            "signals": ph.signals,
+            "is_primary": ph.window_days == primary_window_days if primary_window_days else False
         }
         for ph in persona_history_records
     ]

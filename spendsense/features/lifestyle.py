@@ -11,6 +11,7 @@ Features computed (180-day window only):
 
 from dataclasses import dataclass
 from typing import List, Optional
+from datetime import timedelta
 from spendsense.ingest.schema import Transaction
 
 
@@ -57,18 +58,20 @@ def detect_lifestyle_inflation(
     """
     Detect lifestyle inflation patterns.
     
-    This analysis requires a 180-day window to compare first half vs second half.
+    This analysis requires a minimum window to compare first half vs second half.
+    For 90-day windows: compares first 45 days vs last 45 days
+    For 180-day windows: compares first 90 days vs last 90 days
     
     Args:
-        transactions_180d: All transactions in 180-day window
-        savings_transactions_180d: Savings account transactions in 180-day window
-        window_days: Should be 180 (validated internally)
+        transactions_180d: All transactions in the window
+        savings_transactions_180d: Savings account transactions in the window
+        window_days: Size of the time window (90 or 180 days)
     
     Returns:
         LifestyleSignals object with calculated metrics
     """
-    # This analysis only makes sense for 180-day windows
-    if window_days < 180:
+    # This analysis requires at least 90 days to split into halves
+    if window_days < 90:
         return LifestyleSignals(
             income_change_percent=0.0,
             savings_rate_change_percent=0.0,
@@ -81,9 +84,11 @@ def detect_lifestyle_inflation(
             sufficient_data=False
         )
     
-    # Split transactions into first 90 days and second 90 days
-    first_half, second_half = _split_into_halves(transactions_180d)
-    savings_first_half, savings_second_half = _split_into_halves(savings_transactions_180d)
+    # Split transactions into first half and second half
+    # For 90-day window: first 45 days vs last 45 days
+    # For 180-day window: first 90 days vs last 90 days
+    first_half, second_half = _split_into_halves(transactions_180d, window_days)
+    savings_first_half, savings_second_half = _split_into_halves(savings_transactions_180d, window_days)
     
     # Calculate income for each half
     income_first = sum(abs(t.amount) for t in first_half if t.amount < 0 and _is_income(t))
@@ -105,8 +110,12 @@ def detect_lifestyle_inflation(
     discretionary_trend = _analyze_discretionary_spending(first_half, second_half)
     
     # Check if we have sufficient data
+    # For 90-day window: need at least 5 transactions per half
+    # For 180-day window: need at least 10 transactions per half
+    min_transactions_per_half = 5 if window_days == 90 else 10
     sufficient_data = (income_first > 0 and income_second > 0 and 
-                      len(first_half) >= 10 and len(second_half) >= 10)
+                      len(first_half) >= min_transactions_per_half and 
+                      len(second_half) >= min_transactions_per_half)
     
     return LifestyleSignals(
         income_change_percent=income_change_pct,
@@ -121,30 +130,45 @@ def detect_lifestyle_inflation(
     )
 
 
-def _split_into_halves(transactions: List[Transaction]) -> tuple:
+def _split_into_halves(transactions: List[Transaction], window_days: int = 180) -> tuple:
     """
     Split transactions into first half and second half based on dates.
     
+    For 90-day window: first 45 days vs last 45 days
+    For 180-day window: first 90 days vs last 90 days
+    
     Args:
         transactions: List of transactions
+        window_days: Size of the window (90 or 180)
     
     Returns:
-        Tuple of (first_half, second_half) transaction lists
+        Tuple of (first_half_transactions, second_half_transactions)
     """
     if not transactions:
         return [], []
     
+    # Calculate split point
+    split_days = window_days // 2  # 45 for 90-day, 90 for 180-day
+    
     # Sort by date
-    from datetime import datetime
     sorted_txns = sorted(transactions, key=lambda t: _to_datetime(t.date))
     
-    # Find the midpoint date
-    first_date = _to_datetime(sorted_txns[0].date)
-    last_date = _to_datetime(sorted_txns[-1].date)
-    midpoint_date = first_date + (last_date - first_date) / 2
+    if not sorted_txns:
+        return [], []
     
-    first_half = [t for t in sorted_txns if _to_datetime(t.date) <= midpoint_date]
-    second_half = [t for t in sorted_txns if _to_datetime(t.date) > midpoint_date]
+    # Get reference date (most recent transaction date)
+    reference_date = _to_datetime(sorted_txns[-1].date).date()
+    split_date = reference_date - timedelta(days=split_days)
+    
+    first_half = []
+    second_half = []
+    
+    for txn in sorted_txns:
+        txn_date = _to_datetime(txn.date).date()
+        if txn_date < split_date:
+            first_half.append(txn)
+        else:
+            second_half.append(txn)
     
     return first_half, second_half
 
