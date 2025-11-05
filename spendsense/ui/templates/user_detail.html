@@ -95,26 +95,50 @@
                 
                 <div class="signal-card">
                     <h5>Loans</h5>
-                    <ul>
-                        {% if user_detail.signals_30d.loans.has_mortgage or user_detail.signals_30d.loans.has_student_loan %}
-                        <li>Total Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.total_loan_balance) }}</strong></li>
-                        <li>Monthly Loan Payments: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.total_monthly_loan_payments) }}</strong></li>
-                        {% if user_detail.signals_30d.loans.loan_payment_burden_percent > 0 %}
-                        <li>Payment Burden: <strong>{{ "%.1f"|format(user_detail.signals_30d.loans.loan_payment_burden_percent) }}% of income</strong></li>
+                    {% if user_detail.signals_30d.loans.has_mortgage or user_detail.signals_30d.loans.has_student_loan %}
+                        {% set monthly_income_30d = 0.0 %}
+                        {% set annual_income_30d = 0.0 %}
+                        {% if user_detail.signals_30d.income.payroll_detected and user_detail.signals_30d.income.total_income > 0 %}
+                            {% set monthly_income_30d = user_detail.signals_30d.income.total_income %}
+                            {% set annual_income_30d = monthly_income_30d * 12 %}
                         {% endif %}
-                        {% if user_detail.signals_30d.loans.has_mortgage %}
-                        <li>Mortgage Balance: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.mortgage_balance) }}</strong></li>
-                        {% endif %}
-                        {% if user_detail.signals_30d.loans.has_student_loan %}
-                        <li>Student Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_30d.loans.student_loan_balance) }}</strong></li>
-                        {% endif %}
-                        {% if user_detail.signals_30d.loans.any_loan_overdue %}
-                        <li>Status: <span class="badge badge-error">Overdue</span></li>
-                        {% endif %}
-                        {% else %}
-                        <li>No loans detected</li>
-                        {% endif %}
-                    </ul>
+                        
+                        <ul>
+                            {% if user_detail.signals_30d.loans.has_mortgage %}
+                                <li><strong>Mortgage</strong></li>
+                                {% if annual_income_30d > 0 %}
+                                    {% set mortgage_balance_to_income = user_detail.signals_30d.loans.mortgage_balance / annual_income_30d %}
+                                    {% set mortgage_payment_burden = (user_detail.signals_30d.loans.mortgage_monthly_payment / monthly_income_30d * 100) if monthly_income_30d > 0 else 0.0 %}
+                                    <li style="margin-left: 1em;">Balance-to-Income Ratio: <strong>{{ "%.2f"|format(mortgage_balance_to_income) }}x</strong></li>
+                                    <li style="margin-left: 1em;">Payment Burden: <strong>{{ "%.1f"|format(mortgage_payment_burden) }}%</strong></li>
+                                {% else %}
+                                    <li style="margin-left: 1em;">Balance-to-Income Ratio: <strong>N/A</strong> (no income)</li>
+                                    <li style="margin-left: 1em;">Payment Burden: <strong>N/A</strong> (no income)</li>
+                                {% endif %}
+                            {% endif %}
+                            
+                            {% if user_detail.signals_30d.loans.has_student_loan %}
+                                <li><strong>Student Loans</strong></li>
+                                {% if annual_income_30d > 0 %}
+                                    {% set student_loan_balance_to_income = user_detail.signals_30d.loans.student_loan_balance / annual_income_30d %}
+                                    {% set student_loan_payment_burden = (user_detail.signals_30d.loans.student_loan_monthly_payment / monthly_income_30d * 100) if monthly_income_30d > 0 else 0.0 %}
+                                    <li style="margin-left: 1em;">Balance-to-Income Ratio: <strong>{{ "%.2f"|format(student_loan_balance_to_income) }}x</strong></li>
+                                    <li style="margin-left: 1em;">Payment Burden: <strong>{{ "%.1f"|format(student_loan_payment_burden) }}%</strong></li>
+                                {% else %}
+                                    <li style="margin-left: 1em;">Balance-to-Income Ratio: <strong>N/A</strong> (no income)</li>
+                                    <li style="margin-left: 1em;">Payment Burden: <strong>N/A</strong> (no income)</li>
+                                {% endif %}
+                            {% endif %}
+                            
+                            {% if user_detail.signals_30d.loans.any_loan_overdue %}
+                                <li>Status: <span class="badge badge-error">Overdue</span></li>
+                            {% endif %}
+                        </ul>
+                    {% else %}
+                        <ul>
+                            <li>No loans detected</li>
+                        </ul>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -174,26 +198,50 @@
                 
                 <div class="signal-card">
                     <h5>Loans</h5>
-                    <ul>
-                        {% if user_detail.signals_180d.loans.has_mortgage or user_detail.signals_180d.loans.has_student_loan %}
-                        <li>Total Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.total_loan_balance) }}</strong></li>
-                        <li>Monthly Loan Payments: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.total_monthly_loan_payments) }}</strong></li>
-                        {% if user_detail.signals_180d.loans.loan_payment_burden_percent > 0 %}
-                        <li>Payment Burden: <strong>{{ "%.1f"|format(user_detail.signals_180d.loans.loan_payment_burden_percent) }}% of income</strong></li>
+                    {% if user_detail.signals_180d.loans.has_mortgage or user_detail.signals_180d.loans.has_student_loan %}
+                        {% set monthly_income_180d = 0.0 %}
+                        {% set annual_income_180d = 0.0 %}
+                        {% if user_detail.signals_180d.income.payroll_detected and user_detail.signals_180d.income.total_income > 0 %}
+                            {% set monthly_income_180d = (user_detail.signals_180d.income.total_income / 180) * 30 %}
+                            {% set annual_income_180d = monthly_income_180d * 12 %}
                         {% endif %}
-                        {% if user_detail.signals_180d.loans.has_mortgage %}
-                        <li>Mortgage Balance: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.mortgage_balance) }}</strong></li>
-                        {% endif %}
-                        {% if user_detail.signals_180d.loans.has_student_loan %}
-                        <li>Student Loan Balance: <strong>${{ "%.2f"|format(user_detail.signals_180d.loans.student_loan_balance) }}</strong></li>
-                        {% endif %}
-                        {% if user_detail.signals_180d.loans.any_loan_overdue %}
-                        <li>Status: <span class="badge badge-error">Overdue</span></li>
-                        {% endif %}
-                        {% else %}
-                        <li>No loans detected</li>
-                        {% endif %}
-                    </ul>
+                        
+                        <ul>
+                            {% if user_detail.signals_180d.loans.has_mortgage %}
+                                <li><strong>Mortgage</strong></li>
+                                {% if annual_income_180d > 0 %}
+                                    {% set mortgage_balance_to_income = user_detail.signals_180d.loans.mortgage_balance / annual_income_180d %}
+                                    {% set mortgage_payment_burden = (user_detail.signals_180d.loans.mortgage_monthly_payment / monthly_income_180d * 100) if monthly_income_180d > 0 else 0.0 %}
+                                    <li style="margin-left: 1em;">Balance-to-Income Ratio: <strong>{{ "%.2f"|format(mortgage_balance_to_income) }}x</strong></li>
+                                    <li style="margin-left: 1em;">Payment Burden: <strong>{{ "%.1f"|format(mortgage_payment_burden) }}%</strong></li>
+                                {% else %}
+                                    <li style="margin-left: 1em;">Balance-to-Income Ratio: <strong>N/A</strong> (no income)</li>
+                                    <li style="margin-left: 1em;">Payment Burden: <strong>N/A</strong> (no income)</li>
+                                {% endif %}
+                            {% endif %}
+                            
+                            {% if user_detail.signals_180d.loans.has_student_loan %}
+                                <li><strong>Student Loans</strong></li>
+                                {% if annual_income_180d > 0 %}
+                                    {% set student_loan_balance_to_income = user_detail.signals_180d.loans.student_loan_balance / annual_income_180d %}
+                                    {% set student_loan_payment_burden = (user_detail.signals_180d.loans.student_loan_monthly_payment / monthly_income_180d * 100) if monthly_income_180d > 0 else 0.0 %}
+                                    <li style="margin-left: 1em;">Balance-to-Income Ratio: <strong>{{ "%.2f"|format(student_loan_balance_to_income) }}x</strong></li>
+                                    <li style="margin-left: 1em;">Payment Burden: <strong>{{ "%.1f"|format(student_loan_payment_burden) }}%</strong></li>
+                                {% else %}
+                                    <li style="margin-left: 1em;">Balance-to-Income Ratio: <strong>N/A</strong> (no income)</li>
+                                    <li style="margin-left: 1em;">Payment Burden: <strong>N/A</strong> (no income)</li>
+                                {% endif %}
+                            {% endif %}
+                            
+                            {% if user_detail.signals_180d.loans.any_loan_overdue %}
+                                <li>Status: <span class="badge badge-error">Overdue</span></li>
+                            {% endif %}
+                        </ul>
+                    {% else %}
+                        <ul>
+                            <li>No loans detected</li>
+                        </ul>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -221,6 +269,8 @@
                                 <strong>{{ ph.window_days }}d</strong>
                                 {% if ph.is_primary %}
                                     <span class="badge badge-primary">PRIMARY</span>
+                                {% elif ph.is_secondary %}
+                                    <span class="badge badge-secondary">SECONDARY</span>
                                 {% endif %}
                             </td>
                             <td><span class="badge badge-persona">{{ ph.persona }}</span></td>

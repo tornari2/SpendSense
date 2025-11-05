@@ -24,102 +24,224 @@ class EducationTemplate:
 # Signal 1: Card Utilization ≥50%
 SIGNAL_1_TEMPLATES = [
     EducationTemplate(
-        template_id="signal1_utilization_basics",
+        template_id="signal1_utilization_explainer",
         signal_id="signal_1",
         persona_id="persona1_high_utilization",
         category="credit_utilization",
-        title="Understanding Credit Utilization Impact",
+        title="Credit Utilization Explained: How It Affects Your Score",
         content=(
-            "Credit utilization is the percentage of your available credit that you're using. "
-            "Your {card_name} ending in {last_four} is currently at {utilization:.1f}% utilization "
-            "(${balance:,.2f} of ${limit:,.2f} limit). Keeping utilization below 30% can help improve your "
-            "credit score over time. When utilization is high, it may indicate you're relying heavily on credit, "
-            "which can impact your financial flexibility and credit score."
+            "**What is Credit Utilization?**\n\n"
+            "Credit utilization is the percentage of your available credit that you're using. It's calculated as: "
+            "(Current Balance ÷ Credit Limit) × 100.\n\n"
+            "**Your Current Situation:**\n"
+            "• Card: {card_name} ending in {last_four}\n"
+            "• Current balance: ${balance:,.2f}\n"
+            "• Credit limit: ${limit:,.2f}\n"
+            "• Utilization rate: {utilization:.1f}%\n\n"
+            "**Why It Matters:**\n"
+            "Credit utilization accounts for 30% of your FICO credit score. High utilization signals to lenders "
+            "that you may be overextended financially. The recommended threshold is below 30%, with optimal "
+            "utilization under 10%.\n\n"
+            "**Impact on Your Score:**\n"
+            "At {utilization:.1f}% utilization, your credit score is likely being negatively impacted. Reducing "
+            "utilization to below 30% (${target_balance:,.2f}) could improve your score by 20-50 points. "
+            "Getting it below 10% (${excellent_target:,.2f}) typically provides the best score benefit."
         ),
-        variables=["card_name", "last_four", "utilization", "balance", "limit"]
+        variables=["card_name", "last_four", "utilization", "balance", "limit", "target_balance", "excellent_target"]
     ),
     EducationTemplate(
-        template_id="signal1_payment_plan",
+        template_id="signal1_debt_paydown_strategy",
         signal_id="signal_1",
         persona_id="persona1_high_utilization",
         category="debt_paydown",
-        title="Creating a Payment Plan to Reduce Utilization",
+        title="Debt Paydown Strategy: Step-by-Step Plan",
         content=(
-            "With your {card_name} at {utilization:.1f}% utilization, creating a structured payment plan "
-            "can help reduce your balance faster. Your current balance is ${balance:,.2f} and your minimum "
-            "payment is ${min_payment:.2f}/month. Consider paying ${target_payment:.2f}/month instead "
-            "to bring utilization below 30% within approximately {months} months. This approach will help "
-            "reduce the amount you're paying in interest and improve your credit score."
+            "**Your Debt Paydown Plan**\n\n"
+            "**Current Situation:**\n"
+            "• Card: {card_name}\n"
+            "• Current balance: ${balance:,.2f}\n"
+            "• Credit limit: ${limit:,.2f}\n"
+            "• Utilization: {utilization:.1f}%\n"
+            "• Minimum payment: ${min_payment:.2f}/month\n"
+            "• Target payment: ${target_payment:.2f}/month\n\n"
+            "**Step 1: Calculate Your Goal**\n"
+            "To bring utilization below 30%, your balance needs to be under ${target_balance:,.2f}. "
+            "That means paying down ${paydown_amount:,.2f}.\n\n"
+            "**Step 2: Create Your Payment Schedule**\n"
+            "• Month 1-{months}: Pay ${target_payment:.2f}/month\n"
+            "• This will reduce your balance by approximately ${monthly_paydown:.2f}/month\n"
+            "• Estimated timeline: {months} months to reach 30% utilization\n\n"
+            "**Step 3: Track Your Progress**\n"
+            "Monitor your utilization each month:\n"
+            "• Month 1: Target ~{utilization_3mo:.1f}% utilization\n"
+            "• Month 2: Target ~{utilization_2mo:.1f}% utilization\n"
+            "• Month 3: Target ~30% utilization\n\n"
+            "**Step 4: Additional Strategies**\n"
+            "• Pay multiple times per month to keep balances low\n"
+            "• Request a credit limit increase (if you can avoid using it)\n"
+            "• Avoid new credit applications while paying down debt\n"
+            "• Consider the debt avalanche method: pay minimums on all cards, extra on highest APR card"
         ),
-        variables=["card_name", "utilization", "balance", "min_payment", "target_payment", "months"]
+        variables=["card_name", "balance", "limit", "utilization", "min_payment", "target_payment", "target_balance", 
+                  "paydown_amount", "months", "monthly_paydown", "utilization_3mo", "utilization_2mo"]
     ),
 ]
 
 # Signal 2: Interest Charges > 0
 SIGNAL_2_TEMPLATES = [
     EducationTemplate(
-        template_id="signal2_interest_reduction",
+        template_id="signal2_interest_reduction_strategy",
         signal_id="signal_2",
         persona_id="persona1_high_utilization",
         category="debt_paydown",
-        title="Reducing Credit Card Interest Charges",
+        title="Interest Reduction Strategy: Stop Paying Interest",
         content=(
-            "Your {card_name} ending in {last_four} has an APR of {apr:.1f}%, which means you're paying "
-            "approximately ${monthly_interest:.2f}/month in interest on your current balance of ${balance:,.2f}. "
-            "Paying down your balance will reduce these interest charges. Consider paying more than the minimum "
-            "payment (${min_payment:.2f}/month) to reduce your balance faster and save on interest costs."
+            "**Your Interest Cost Analysis**\n\n"
+            "**Current Situation:**\n"
+            "• Card: {card_name} ending in {last_four}\n"
+            "• Balance: ${balance:,.2f}\n"
+            "• APR: {apr:.1f}%\n"
+            "• Monthly interest: ${monthly_interest:.2f}\n"
+            "• Annual interest cost: ${annual_interest:,.2f}\n"
+            "• Minimum payment: ${min_payment:.2f}/month\n\n"
+            "**The Cost of Interest:**\n"
+            "At {apr:.1f}% APR, you're paying ${monthly_interest:.2f} in interest each month. "
+            "That's ${annual_interest:,.2f} per year that goes to interest rather than paying down your balance.\n\n"
+            "**Strategy 1: Pay More Than Minimum**\n"
+            "• Current minimum: ${min_payment:.2f}/month\n"
+            "• Recommended payment: ${target_payment:.2f}/month\n"
+            "• Extra payment: ${extra_payment:.2f}/month\n"
+            "• Interest saved: ${interest_saved:.2f}/month\n\n"
+            "**Strategy 2: Pay Multiple Times Per Month**\n"
+            "Making bi-weekly payments reduces your average daily balance, which decreases interest charges. "
+            "Consider paying ${biweekly_payment:.2f} every two weeks instead of ${min_payment:.2f} once per month.\n\n"
+            "**Strategy 3: Calculate Your Payoff Timeline**\n"
+            "• Minimum payment only: {months_minimum_only:.0f} months, ${total_interest_minimum:,.2f} in interest\n"
+            "• With ${target_payment:.2f}/month: {months_aggressive:.0f} months, ${total_interest_aggressive:,.2f} in interest\n"
+            "• You'll save ${interest_savings:,.2f} and pay off {months_faster:.0f} months faster!"
         ),
-        variables=["card_name", "last_four", "apr", "monthly_interest", "balance", "min_payment"]
+        variables=["card_name", "last_four", "apr", "monthly_interest", "balance", "min_payment", "annual_interest",
+                  "target_payment", "extra_payment", "interest_saved", "biweekly_payment", "months_minimum_only",
+                  "total_interest_minimum", "months_aggressive", "total_interest_aggressive", "interest_savings", "months_faster"]
     ),
     EducationTemplate(
-        template_id="signal2_balance_transfer",
+        template_id="signal2_balance_transfer_guide",
         signal_id="signal_2",
         persona_id="persona1_high_utilization",
         category="debt_optimization",
-        title="Considering Balance Transfer Options",
+        title="Balance Transfer Guide: When It Makes Sense",
         content=(
-            "You're currently paying ${monthly_interest:.2f}/month in interest on your {card_name} with a "
-            "{apr:.1f}% APR. Balance transfer cards with 0% introductory APR periods can help you pay down "
-            "your balance faster by reducing or eliminating interest charges temporarily. If you transfer "
-            "your balance of ${balance:,.2f} to a 0% APR card, you could save ${monthly_interest:.2f}/month "
-            "in interest while you pay down the balance. Make sure you can pay off the balance before the "
-            "introductory period ends."
+            "**Balance Transfer Analysis**\n\n"
+            "**Your Current Costs:**\n"
+            "• Card: {card_name}\n"
+            "• Balance: ${balance:,.2f}\n"
+            "• Current APR: {apr:.1f}%\n"
+            "• Monthly interest: ${monthly_interest:.2f}\n"
+            "• Annual interest: ${annual_interest:,.2f}\n\n"
+            "**Balance Transfer Benefits:**\n"
+            "A 0% introductory APR balance transfer card could:\n"
+            "• Eliminate ${monthly_interest:.2f}/month in interest payments\n"
+            "• Save ${annual_interest:,.2f}/year in interest costs\n"
+            "• Allow you to pay down ${balance:,.2f} faster\n\n"
+            "**Things to Consider:**\n"
+            "✓ **Transfer fee:** Typically 3-5% (${transfer_fee:,.2f} for your balance)\n"
+            "✓ **Introductory period:** Usually 12-18 months\n"
+            "✓ **Payoff goal:** You need to pay off ${balance:,.2f} before the 0% period ends\n"
+            "✓ **Required monthly payment:** ${required_monthly_payment:.2f}/month to pay off in time\n\n"
+            "**Is It Worth It?**\n"
+            "If you can pay ${required_monthly_payment:.2f}/month, a balance transfer saves you "
+            "${net_savings:,.2f} after transfer fees. Make sure you:\n"
+            "• Have a plan to pay off the balance before the 0% period ends\n"
+            "• Avoid using the new card for new purchases\n"
+            "• Can afford the transfer fee upfront"
         ),
-        variables=["monthly_interest", "card_name", "apr", "balance"]
+        variables=["card_name", "apr", "monthly_interest", "balance", "annual_interest", "transfer_fee", 
+                  "required_monthly_payment", "net_savings"]
     ),
 ]
 
 # Signal 3: Minimum-Payment-Only
 SIGNAL_3_TEMPLATES = [
     EducationTemplate(
-        template_id="signal3_payment_strategy",
+        template_id="signal3_minimum_payment_trap",
         signal_id="signal_3",
         persona_id="persona1_high_utilization",
         category="debt_paydown",
-        title="Moving Beyond Minimum Payments",
+        title="The Minimum Payment Trap: Why It Costs So Much",
         content=(
-            "Making only minimum payments on your {card_name} ending in {last_four} means it will take "
-            "much longer to pay off your balance of ${balance:,.2f}. Your minimum payment is ${min_payment:.2f}/month. "
-            "Paying more than the minimum, even an extra ${extra_payment:.2f}/month, can significantly reduce "
-            "the time it takes to pay off your balance and the total interest you'll pay. Consider setting up "
-            "automatic payments for a fixed amount above the minimum to build this habit."
+            "**The Minimum Payment Reality Check**\n\n"
+            "**Your Current Situation:**\n"
+            "• Card: {card_name} ending in {last_four}\n"
+            "• Balance: ${balance:,.2f}\n"
+            "• Minimum payment: ${min_payment:.2f}/month\n"
+            "• Recommended payment: ${target_payment:.2f}/month\n\n"
+            "**The Cost of Minimum Payments:**\n"
+            "If you only pay the minimum (${min_payment:.2f}/month):\n"
+            "• Time to pay off: {months_minimum_only:.0f} months ({years_minimum:.1f} years)\n"
+            "• Total interest paid: ${total_interest_minimum:,.2f}\n"
+            "• Total amount paid: ${total_paid_minimum:,.2f}\n\n"
+            "**With Increased Payments:**\n"
+            "If you pay ${target_payment:.2f}/month instead:\n"
+            "• Time to pay off: {months_aggressive:.0f} months ({years_aggressive:.1f} years)\n"
+            "• Total interest paid: ${total_interest_aggressive:,.2f}\n"
+            "• Total amount paid: ${total_paid_aggressive:,.2f}\n\n"
+            "**Your Savings:**\n"
+            "By paying ${extra_payment:.2f} more per month, you'll:\n"
+            "• Save ${interest_savings:,.2f} in interest\n"
+            "• Pay off your debt {months_faster:.0f} months faster\n"
+            "• Reduce total cost by ${total_savings:,.2f}\n\n"
+            "**Action Steps:**\n"
+            "1. Set up automatic payments for ${target_payment:.2f}/month\n"
+            "2. Round up to the nearest ${round_up_amount:.0f} for easier budgeting\n"
+            "3. Pay bi-weekly: ${biweekly_payment:.2f} every 2 weeks\n"
+            "4. Track your progress monthly to stay motivated"
         ),
-        variables=["card_name", "last_four", "balance", "min_payment", "extra_payment"]
+        variables=["card_name", "last_four", "balance", "min_payment", "target_payment", "months_minimum_only",
+                  "years_minimum", "total_interest_minimum", "total_paid_minimum", "months_aggressive", 
+                  "years_aggressive", "total_interest_aggressive", "total_paid_aggressive", "extra_payment",
+                  "interest_savings", "months_faster", "total_savings", "round_up_amount", "biweekly_payment"]
     ),
     EducationTemplate(
-        template_id="signal3_budgeting_for_payments",
+        template_id="signal3_budget_template",
         signal_id="signal_3",
         persona_id="persona1_high_utilization",
         category="budget",
-        title="Budgeting to Increase Credit Card Payments",
+        title="Budget Template: Finding Money for Debt Payments",
         content=(
-            "Your {card_name} has a balance of ${balance:,.2f} and minimum payment of ${min_payment:.2f}/month. "
-            "Creating a budget that allocates additional funds toward credit card payments can help you pay down "
-            "debt faster. Review your spending to identify areas where you can reduce expenses by ${target_reduction:.2f}/month "
-            "to put toward your credit card payment. This approach helps you pay down debt without significantly "
-            "impacting your lifestyle."
+            "**Budget Template for Debt Paydown**\n\n"
+            "**Your Debt Payment Goal:**\n"
+            "• Current minimum: ${min_payment:.2f}/month\n"
+            "• Target payment: ${target_payment:.2f}/month\n"
+            "• Extra needed: ${extra_payment:.2f}/month\n\n"
+            "**50/30/20 Budget Breakdown:**\n"
+            "Allocate your monthly income (${monthly_income:,.2f}) as follows:\n\n"
+            "**50% - Needs ($${needs_budget:,.2f}):**\n"
+            "• Housing: ${housing:,.2f}\n"
+            "• Utilities: ${utilities:,.2f}\n"
+            "• Food: ${food:,.2f}\n"
+            "• Transportation: ${transportation:,.2f}\n"
+            "• Minimum debt payments: ${min_payment:.2f}\n"
+            "• Total needs: ${needs_budget:,.2f}\n\n"
+            "**30% - Wants ($${wants_budget:,.2f}):**\n"
+            "• Entertainment: ${entertainment:,.2f}\n"
+            "• Dining out: ${dining_out:,.2f}\n"
+            "• Shopping: ${shopping:,.2f}\n"
+            "• Other: ${other_wants:,.2f}\n\n"
+            "**20% - Savings & Extra Debt ($${savings_debt_budget:,.2f}):**\n"
+            "• Emergency fund: ${emergency_fund:,.2f}\n"
+            "• Extra debt payment: ${extra_payment:.2f}\n"
+            "• Other savings: ${other_savings:,.2f}\n\n"
+            "**Finding ${extra_payment:.2f}/month:**\n"
+            "Review your 'wants' category and reduce by:\n"
+            "• Cancel unused subscriptions: ${subscription_savings:.2f}/month\n"
+            "• Reduce dining out: ${dining_reduction:.2f}/month\n"
+            "• Cut entertainment costs: ${entertainment_reduction:.2f}/month\n"
+            "• Total reduction: ${total_reduction:.2f}/month ✓"
         ),
-        variables=["card_name", "balance", "min_payment", "target_reduction"]
+        variables=["min_payment", "target_payment", "extra_payment", "monthly_income", "needs_budget", 
+                  "housing", "utilities", "food", "transportation", "wants_budget", "entertainment", 
+                  "dining_out", "shopping", "other_wants", "savings_debt_budget", "emergency_fund", 
+                  "other_savings", "subscription_savings", "dining_reduction", "entertainment_reduction", "total_reduction"]
     ),
 ]
 
@@ -160,84 +282,238 @@ SIGNAL_4_TEMPLATES = [
 # Signal 5: Variable Income + Low Buffer
 SIGNAL_5_TEMPLATES = [
     EducationTemplate(
-        template_id="signal5_emergency_fund_basics",
+        template_id="signal5_emergency_fund_calculator",
         signal_id="signal_5",
         persona_id="persona2_variable_income",
         category="emergency_fund",
-        title="Building an Emergency Fund with Variable Income",
+        title="Emergency Fund Calculator: How Much Do You Need?",
         content=(
-            "Your cash-flow buffer is currently {cash_flow_buffer_months:.1f} months, which means you may struggle "
-            "to cover unexpected expenses. With variable income and a median pay gap of {median_pay_gap_days:.0f} days "
-            "between paychecks, building an emergency fund is especially important. Aim to build a fund covering "
-            "3-6 months of expenses (approximately ${target_emergency_fund:,.2f} based on your average monthly expenses "
-            "of ${avg_monthly_expenses:,.2f}). Start by setting aside ${target_monthly_savings:.2f}/month from your "
-            "variable income to build this safety net gradually."
+            "**Emergency Fund Calculator**\n\n"
+            "**Your Current Situation:**\n"
+            "• Cash-flow buffer: {cash_flow_buffer_months:.1f} months\n"
+            "• Average monthly expenses: ${avg_monthly_expenses:,.2f}\n"
+            "• Median pay gap: {median_pay_gap_days:.0f} days between paychecks\n"
+            "• Payment frequency: {payment_frequency}\n\n"
+            "**Emergency Fund Targets:**\n"
+            "For variable income earners, experts recommend:\n"
+            "• Minimum: 3 months expenses = ${target_3month:,.2f}\n"
+            "• Comfortable: 6 months expenses = ${target_6month:,.2f}\n"
+            "• Ideal: 6-12 months expenses = ${target_12month:,.2f}\n\n"
+            "**Your Recommended Target:**\n"
+            "Given your variable income, aim for ${target_emergency_fund:,.2f} ({target_months:.0f} months of expenses).\n\n"
+            "**Savings Plan:**\n"
+            "• Monthly savings goal: ${target_monthly_savings:.2f}\n"
+            "• Percentage of income: {savings_percentage:.1f}%\n"
+            "• Timeline to reach goal: {months_to_goal:.0f} months\n\n"
+            "**How to Build It:**\n"
+            "1. Open a separate high-yield savings account\n"
+            "2. Set up automatic transfers: ${target_monthly_savings:.2f}/month\n"
+            "3. During high-income months, save extra: ${high_month_savings:.2f}\n"
+            "4. During low-income months, maintain minimum: ${target_monthly_savings:.2f}\n"
+            "5. Track progress monthly toward ${target_emergency_fund:,.2f}"
         ),
-        variables=["cash_flow_buffer_months", "median_pay_gap_days", "target_emergency_fund", "avg_monthly_expenses", "target_monthly_savings"]
+        variables=["cash_flow_buffer_months", "avg_monthly_expenses", "median_pay_gap_days", "payment_frequency",
+                  "target_3month", "target_6month", "target_12month", "target_emergency_fund", "target_months",
+                  "target_monthly_savings", "savings_percentage", "months_to_goal", "high_month_savings"]
     ),
     EducationTemplate(
-        template_id="signal5_income_smoothing",
-        signal_id="signal_5",
-        persona_id="persona2_variable_income",
-        category="income_management",
-        title="Income Smoothing Strategies",
-        content=(
-            "With variable income showing a median pay gap of {median_pay_gap_days:.0f} days and a cash-flow buffer "
-            "of {cash_flow_buffer_months:.1f} months, income smoothing can help stabilize your finances. Create a separate "
-            "savings account for income irregularities - deposit all income here, then pay yourself a consistent monthly "
-            "amount based on your average income. This creates a buffer for lean months and prevents overspending during "
-            "high-income months. Your payment frequency appears to be {payment_frequency}."
-        ),
-        variables=["median_pay_gap_days", "cash_flow_buffer_months", "payment_frequency"]
-    ),
-    EducationTemplate(
-        template_id="signal5_percentage_budgeting",
+        template_id="signal5_variable_income_budget_template",
         signal_id="signal_5",
         persona_id="persona2_variable_income",
         category="budget",
-        title="Percentage-Based Budgeting for Variable Income",
+        title="Budget Template for Variable Income",
         content=(
-            "With variable income (detected {payment_frequency} payments), percentage-based budgeting can help you "
-            "manage money more flexibly than fixed-dollar budgets. Allocate percentages of each paycheck: 50% for needs "
-            "(housing, food, utilities), 30% for wants, and 20% for savings and debt repayment. This approach adapts "
-            "to income fluctuations automatically. During high-income months, prioritize building your emergency fund "
-            "to reach your target of ${target_emergency_fund:,.2f}."
+            "**Variable Income Budget Template**\n\n"
+            "**Your Income Profile:**\n"
+            "• Payment frequency: {payment_frequency}\n"
+            "• Average monthly income: ${avg_monthly_income:,.2f}\n"
+            "• Low month estimate: ${low_month_income:,.2f}\n"
+            "• High month estimate: ${high_month_income:,.2f}\n\n"
+            "**Percentage-Based Budget System:**\n"
+            "Use percentages instead of fixed amounts to adapt to income fluctuations.\n\n"
+            "**50% - Needs (Essential Expenses):**\n"
+            "Budget: {needs_percentage:.0f}% of each paycheck\n"
+            "• Housing: {housing_percent:.0f}% = ${housing_amount:,.2f} (avg)\n"
+            "• Food: {food_percent:.0f}% = ${food_amount:,.2f} (avg)\n"
+            "• Utilities: {utilities_percent:.0f}% = ${utilities_amount:,.2f} (avg)\n"
+            "• Transportation: {transportation_percent:.0f}% = ${transportation_amount:,.2f} (avg)\n"
+            "• Minimum debt payments: {debt_percent:.0f}% = ${debt_amount:,.2f} (avg)\n\n"
+            "**30% - Wants (Flexible Expenses):**\n"
+            "Budget: {wants_percentage:.0f}% of each paycheck\n"
+            "• Adjust based on income level\n"
+            "• Low month: Reduce to ${low_wants:,.2f}\n"
+            "• High month: Can increase to ${high_wants:,.2f}\n\n"
+            "**20% - Savings & Extra Debt:**\n"
+            "Budget: {savings_percentage:.0f}% of each paycheck\n"
+            "• Emergency fund: ${emergency_fund_contribution:.2f}/month (avg)\n"
+            "• Extra debt payments: ${extra_debt_payment:.2f}/month (avg)\n"
+            "• Low month: Minimum ${min_savings:.2f}\n"
+            "• High month: Save ${high_savings:.2f}\n\n"
+            "**Income Smoothing Strategy:**\n"
+            "1. Deposit all income into a 'holding' account\n"
+            "2. Pay yourself ${avg_monthly_income:,.2f}/month from this account\n"
+            "3. Extra accumulates as a buffer for lean months\n"
+            "4. Once buffer reaches ${target_buffer:,.2f}, start investing excess"
         ),
-        variables=["payment_frequency", "target_emergency_fund"]
+        variables=["payment_frequency", "avg_monthly_income", "low_month_income", "high_month_income",
+                  "needs_percentage", "housing_percent", "housing_amount", "food_percent", "food_amount",
+                  "utilities_percent", "utilities_amount", "transportation_percent", "transportation_amount",
+                  "debt_percent", "debt_amount", "wants_percentage", "low_wants", "high_wants",
+                  "savings_percentage", "emergency_fund_contribution", "extra_debt_payment", "min_savings",
+                  "high_savings", "target_buffer"]
+    ),
+    EducationTemplate(
+        template_id="signal5_income_smoothing_guide",
+        signal_id="signal_5",
+        persona_id="persona2_variable_income",
+        category="income_management",
+        title="Income Smoothing Guide: Stabilize Your Variable Income",
+        content=(
+            "**Income Smoothing Strategy**\n\n"
+            "**Your Income Pattern:**\n"
+            "• Payment frequency: {payment_frequency}\n"
+            "• Median pay gap: {median_pay_gap_days:.0f} days\n"
+            "• Cash-flow buffer: {cash_flow_buffer_months:.1f} months\n"
+            "• Average monthly income: ${avg_monthly_income:,.2f}\n\n"
+            "**The Income Smoothing Method:**\n"
+            "Create stability from variable income by treating all income the same.\n\n"
+            "**Step 1: Set Up Two Accounts**\n"
+            "• Account A: Income holding account (all income goes here)\n"
+            "• Account B: Spending account (pay yourself from here)\n\n"
+            "**Step 2: Calculate Your Base Pay**\n"
+            "• Average monthly income: ${avg_monthly_income:,.2f}\n"
+            "• Pay yourself: ${base_pay:.2f}/month\n"
+            "• Weekly amount: ${weekly_pay:.2f}/week\n\n"
+            "**Step 3: Build Your Buffer**\n"
+            "Target buffer: ${target_buffer:,.2f} ({target_months:.0f} months of expenses)\n"
+            "• Current buffer: ${current_buffer:,.2f}\n"
+            "• Buffer needed: ${buffer_needed:,.2f}\n"
+            "• Timeline: {months_to_buffer:.0f} months\n\n"
+            "**Step 4: Handle Income Fluctuations**\n"
+            "• Low month (< ${avg_monthly_income:,.2f}): Use buffer to maintain ${base_pay:.2f}/month\n"
+            "• High month (> ${avg_monthly_income:,.2f}): Deposit excess into buffer\n"
+            "• Once buffer is full: Extra income goes to savings/investments\n\n"
+            "**Benefits:**\n"
+            "✓ Consistent monthly budget regardless of income\n"
+            "✓ Reduced financial stress\n"
+            "✓ Easier to plan and save\n"
+            "✓ Protection against income gaps"
+        ),
+        variables=["payment_frequency", "median_pay_gap_days", "cash_flow_buffer_months", "avg_monthly_income",
+                  "base_pay", "weekly_pay", "target_buffer", "target_months", "current_buffer", "buffer_needed",
+                  "months_to_buffer"]
     ),
 ]
 
 # Signal 6: Subscription-Heavy
 SIGNAL_6_TEMPLATES = [
     EducationTemplate(
-        template_id="signal6_subscription_audit",
+        template_id="signal6_subscription_audit_checklist",
         signal_id="signal_6",
         persona_id="persona3_subscription_heavy",
         category="subscription_audit",
-        title="Conducting a Subscription Audit",
+        title="Subscription Audit Checklist: Find Hidden Savings",
         content=(
-            "You have {recurring_count} recurring subscriptions totaling ${monthly_recurring_spend:.2f}/month, which "
-            "represents {subscription_share_percent:.1f}% of your spending. Review each subscription monthly: Do you still "
-            "use it regularly? Can you cancel or downgrade? Consider canceling subscriptions you haven't used in the last "
-            "30 days. This could potentially free up ${potential_savings:.2f}/month (approximately ${annual_savings:.2f}/year) "
-            "for other financial goals like building an emergency fund or paying down debt."
+            "**Subscription Audit Checklist**\n\n"
+            "**Your Current Subscriptions:**\n"
+            "• Total subscriptions: {recurring_count}\n"
+            "• Monthly cost: ${monthly_recurring_spend:.2f}\n"
+            "• Annual cost: ${annual_total:,.2f}\n"
+            "• Percentage of spending: {subscription_share_percent:.1f}%\n\n"
+            "**Step 1: List All Subscriptions**\n"
+            "Create a list of every subscription service you have:\n"
+            "□ Streaming services (Netflix, Hulu, Disney+, etc.)\n"
+            "□ Music services (Spotify, Apple Music, etc.)\n"
+            "□ Cloud storage (iCloud, Google Drive, Dropbox)\n"
+            "□ Software subscriptions (Adobe, Microsoft, etc.)\n"
+            "□ Fitness apps and gym memberships\n"
+            "□ Meal delivery services\n"
+            "□ Subscription boxes\n"
+            "□ News and magazine subscriptions\n"
+            "□ Other recurring services\n\n"
+            "**Step 2: Evaluate Each Subscription**\n"
+            "For each subscription, ask:\n"
+            "□ Do I use this at least once per week?\n"
+            "□ Have I used this in the last 30 days?\n"
+            "□ Is there a cheaper alternative?\n"
+            "□ Can I share this with family/friends?\n"
+            "□ Is there a free version that meets my needs?\n"
+            "□ Can I pause instead of cancel?\n\n"
+            "**Step 3: Calculate Potential Savings**\n"
+            "Based on your audit:\n"
+            "• Potential monthly savings: ${potential_savings:.2f}\n"
+            "• Potential annual savings: ${annual_savings:.2f}\n"
+            "• Number of subscriptions to cancel: {subscriptions_to_cancel:.0f}\n\n"
+            "**Step 4: Take Action**\n"
+            "□ Cancel unused subscriptions\n"
+            "□ Downgrade to cheaper tiers\n"
+            "□ Switch to annual billing (often 10-20% savings)\n"
+            "□ Negotiate with providers for discounts\n"
+            "□ Set calendar reminders to review quarterly\n"
+            "□ Set up alerts 2-3 days before renewal dates\n\n"
+            "**Step 5: Allocate Savings**\n"
+            "Put your ${potential_savings:.2f}/month savings toward:\n"
+            "• Emergency fund: ${emergency_fund_allocation:.2f}/month\n"
+            "• Debt paydown: ${debt_allocation:.2f}/month\n"
+            "• Other financial goals: ${other_allocation:.2f}/month"
         ),
-        variables=["recurring_count", "monthly_recurring_spend", "subscription_share_percent", "potential_savings", "annual_savings"]
+        variables=["recurring_count", "monthly_recurring_spend", "subscription_share_percent", "annual_total",
+                  "potential_savings", "annual_savings", "subscriptions_to_cancel", "emergency_fund_allocation",
+                  "debt_allocation", "other_allocation"]
     ),
     EducationTemplate(
-        template_id="signal6_subscription_optimization",
+        template_id="signal6_subscription_optimization_guide",
         signal_id="signal_6",
         persona_id="persona3_subscription_heavy",
         category="subscription_management",
-        title="Optimizing Your Subscriptions",
+        title="Subscription Optimization Guide: Maximize Value",
         content=(
-            "Your {recurring_count} subscriptions cost ${monthly_recurring_spend:.2f}/month (${annual_total:.2f}/year). "
-            "Before canceling, try negotiating: contact customer service and ask for discounts or promotional rates. "
-            "Many companies offer retention discounts. For subscriptions you want to keep but find expensive, ask about "
-            "annual plans which often provide 10-20% savings compared to monthly billing. Setting up alerts 2-3 days before "
-            "each charge date can help you review and cancel unused services before they renew automatically."
+            "**Subscription Optimization Guide**\n\n"
+            "**Your Current Spending:**\n"
+            "• {recurring_count} subscriptions\n"
+            "• ${monthly_recurring_spend:.2f}/month\n"
+            "• ${annual_total:,.2f}/year\n\n"
+            "**Strategy 1: Negotiate Before Canceling**\n"
+            "Before canceling, try these tactics:\n"
+            "• Contact customer service: Ask for retention discounts\n"
+            "• Mention competitor pricing: 'I can get X for $Y less'\n"
+            "• Ask about student/military discounts\n"
+            "• Request promotional rates: Many companies offer 30-50% off\n"
+            "• Potential savings: ${negotiation_savings:.2f}/month\n\n"
+            "**Strategy 2: Switch to Annual Billing**\n"
+            "Annual plans typically save 10-20%:\n"
+            "• Monthly cost: ${monthly_recurring_spend:.2f}\n"
+            "• Annual cost: ${annual_total:,.2f}\n"
+            "• With annual discount: ${annual_with_discount:,.2f}/year\n"
+            "• Savings: ${annual_savings_amount:,.2f}/year\n\n"
+            "**Strategy 3: Share Family Plans**\n"
+            "Split costs with family/friends:\n"
+            "• Individual cost: ${monthly_recurring_spend:.2f}\n"
+            "• Family plan cost: ${family_plan_cost:.2f}\n"
+            "• Split 4 ways: ${per_person_cost:.2f}/person\n"
+            "• Your savings: ${sharing_savings:.2f}/month\n\n"
+            "**Strategy 4: Bundle Services**\n"
+            "Look for bundle deals:\n"
+            "• Current separate costs: ${monthly_recurring_spend:.2f}\n"
+            "• Bundle cost: ${bundle_cost:.2f}\n"
+            "• Bundle savings: ${bundle_savings:.2f}/month\n\n"
+            "**Strategy 5: Rotate Subscriptions**\n"
+            "Instead of keeping all subscriptions active:\n"
+            "• Cancel one, use another for 3 months\n"
+            "• Switch back when you want different content\n"
+            "• Potential savings: ${rotation_savings:.2f}/month\n\n"
+            "**Total Potential Savings:**\n"
+            "By combining these strategies: ${total_optimization_savings:.2f}/month (${total_annual_savings:,.2f}/year)\n\n"
+            "**Action Items:**\n"
+            "1. Call each provider this week\n"
+            "2. Review annual billing options\n"
+            "3. Set up calendar reminders for renewal dates\n"
+            "4. Track your savings monthly"
         ),
-        variables=["recurring_count", "monthly_recurring_spend", "annual_total"]
+        variables=["recurring_count", "monthly_recurring_spend", "annual_total", "negotiation_savings",
+                  "annual_with_discount", "annual_savings_amount", "family_plan_cost", "per_person_cost",
+                  "sharing_savings", "bundle_cost", "bundle_savings", "rotation_savings",
+                  "total_optimization_savings", "total_annual_savings"]
     ),
 ]
 

@@ -2,7 +2,7 @@
 Helper functions for formatting persona signals for display.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 
 def format_persona_signals(signals: Dict, persona: Optional[str] = None) -> List[str]:
@@ -202,4 +202,134 @@ def format_persona_signals(signals: Dict, persona: Optional[str] = None) -> List
                     reasons.append(f"{key.replace('_', ' ').title()}: {value}")
     
     return reasons
+
+
+def extract_signal_values_from_window(signals_used: Dict, signals_window: Dict) -> List[str]:
+    """
+    Extract actual signal values from the signals window based on signals_used keys.
+    
+    This shows the actual signal values (like those in the Detected Signals section)
+    that were used to trigger the persona assignment.
+    
+    Args:
+        signals_used: Dictionary of signal keys that triggered the persona (e.g., {'max_utilization': 65.2})
+        signals_window: Dictionary representation of SignalSet (from signals_30d.to_dict() or signals_180d.to_dict())
+    
+    Returns:
+        List of formatted signal strings showing actual values
+    """
+    if not signals_used or not signals_window:
+        return []
+    
+    results = []
+    
+    # Map signals_used keys to their locations in the signals_window structure
+    # signals_window structure: {'subscriptions': {...}, 'credit': {...}, 'income': {...}, etc.}
+    
+    # Credit signals
+    if 'credit' in signals_window:
+        credit = signals_window['credit']
+        if 'max_utilization' in signals_used or 'utilization_flag_50' in signals_used or 'utilization_flag_30' in signals_used:
+            util = credit.get('max_utilization_percent', 0)
+            results.append(f"Max Utilization: {util:.1f}%")
+        if 'interest_charges' in signals_used:
+            results.append(f"Interest Charges: {'Yes' if credit.get('interest_charges_present', False) else 'No'}")
+        if 'minimum_payment_only' in signals_used:
+            results.append(f"Minimum Payment Only: {'Yes' if credit.get('minimum_payment_only', False) else 'No'}")
+        if 'is_overdue' in signals_used:
+            results.append(f"Overdue: {'Yes' if credit.get('is_overdue', False) else 'No'}")
+        if 'num_credit_cards' in signals_used:
+            results.append(f"Credit Cards: {credit.get('num_credit_cards', 0)}")
+    
+    # Income signals
+    if 'income' in signals_window:
+        income = signals_window['income']
+        if 'median_pay_gap_days' in signals_used:
+            pay_gap = income.get('median_pay_gap_days', 0)
+            results.append(f"Median Pay Gap: {pay_gap:.0f} days")
+        if 'cash_flow_buffer_months' in signals_used:
+            buffer = income.get('cash_flow_buffer_months', 0)
+            results.append(f"Cash Flow Buffer: {buffer:.2f} months")
+        if 'payment_frequency' in signals_used:
+            freq = income.get('payment_frequency', 'N/A')
+            results.append(f"Payment Frequency: {freq}")
+        if 'payroll_detected' in signals_used:
+            results.append(f"Payroll Detected: {'Yes' if income.get('payroll_detected', False) else 'No'}")
+        if 'total_income' in signals_used:
+            total = income.get('total_income', 0)
+            results.append(f"Total Income: ${total:,.2f}")
+    
+    # Subscription signals
+    if 'subscriptions' in signals_window:
+        subs = signals_window['subscriptions']
+        if 'recurring_merchant_count' in signals_used:
+            count = subs.get('recurring_merchant_count', 0)
+            results.append(f"Recurring Merchants: {count}")
+        if 'monthly_recurring_spend' in signals_used:
+            spend = subs.get('monthly_recurring_spend', 0)
+            results.append(f"Monthly Recurring Spend: ${spend:.2f}")
+        if 'subscription_share_percent' in signals_used:
+            share = subs.get('subscription_share_percent', 0)
+            results.append(f"Subscription Share: {share:.1f}%")
+    
+    # Savings signals
+    if 'savings' in signals_window:
+        savings = signals_window['savings']
+        if 'growth_rate_percent' in signals_used:
+            growth = savings.get('growth_rate_percent', 0)
+            results.append(f"Savings Growth Rate: {growth:.1f}%")
+        if 'net_inflow_monthly' in signals_used or 'net_inflow' in signals_used:
+            inflow = savings.get('net_inflow', 0)
+            # Normalize to monthly if needed
+            window_days = signals_window.get('window_days', 30)
+            if window_days == 180:
+                inflow = (inflow / 180) * 30
+            results.append(f"Net Inflow: ${inflow:.2f}/month")
+        if 'emergency_fund_months' in signals_used:
+            months = savings.get('emergency_fund_months', 0)
+            results.append(f"Emergency Fund: {months:.1f} months")
+    
+    # Loan signals - only show balance-to-income ratios and payment burdens
+    if 'loans' in signals_window:
+        loans = signals_window['loans']
+        if 'mortgage_balance_to_income_ratio' in signals_used:
+            balance = loans.get('mortgage_balance', 0)
+            income_total = signals_window.get('income', {}).get('total_income', 0)
+            window_days = signals_window.get('window_days', 30)
+            if income_total > 0:
+                monthly_income = (income_total / window_days) * 30
+                annual_income = monthly_income * 12
+                if annual_income > 0:
+                    ratio = balance / annual_income
+                    results.append(f"Mortgage Balance-to-Income: {ratio:.2f}x")
+        if 'mortgage_payment_burden_percent' in signals_used:
+            payment = loans.get('mortgage_monthly_payment', 0)
+            income_total = signals_window.get('income', {}).get('total_income', 0)
+            window_days = signals_window.get('window_days', 30)
+            if income_total > 0:
+                monthly_income = (income_total / window_days) * 30
+                if monthly_income > 0:
+                    burden = (payment / monthly_income) * 100
+                    results.append(f"Mortgage Payment Burden: {burden:.1f}%")
+        if 'student_loan_balance_to_income_ratio' in signals_used:
+            balance = loans.get('student_loan_balance', 0)
+            income_total = signals_window.get('income', {}).get('total_income', 0)
+            window_days = signals_window.get('window_days', 30)
+            if income_total > 0:
+                monthly_income = (income_total / window_days) * 30
+                annual_income = monthly_income * 12
+                if annual_income > 0:
+                    ratio = balance / annual_income
+                    results.append(f"Student Loan Balance-to-Income: {ratio:.2f}x")
+        if 'student_loan_payment_burden_percent' in signals_used:
+            payment = loans.get('student_loan_monthly_payment', 0)
+            income_total = signals_window.get('income', {}).get('total_income', 0)
+            window_days = signals_window.get('window_days', 30)
+            if income_total > 0:
+                monthly_income = (income_total / window_days) * 30
+                if monthly_income > 0:
+                    burden = (payment / monthly_income) * 100
+                    results.append(f"Student Loan Payment Burden: {burden:.1f}%")
+    
+    return results
 

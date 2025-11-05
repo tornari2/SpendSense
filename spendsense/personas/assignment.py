@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from spendsense.features.signals import SignalSet, calculate_signals
 from spendsense.ingest.database import get_session
+from spendsense.ingest.schema import Account, Liability
 from .priority import resolve_persona_priority, evaluate_all_personas, PERSONA_NAMES
 from .history import save_persona_history
 
@@ -94,6 +95,19 @@ def assign_persona(
             window_days=30
         )
         
+        # If persona1 was assigned as fallback, ensure user has overdue credit cards
+        if assignment_30d.persona_id == 'persona1_high_utilization' and 'No other persona matched' in assignment_30d.reasoning:
+            _ensure_overdue_credit_card_for_fallback(user_id, session)
+            # Recalculate signals after updating data
+            signals_30d, signals_180d = calculate_signals(user_id, session=session)
+            # Reassign with updated signals
+            assignment_30d = _assign_persona_for_window(
+                user_id=user_id,
+                signals_30d=signals_30d,
+                signals_180d=signals_180d,
+                window_days=30
+            )
+        
         # Assign persona for 180-day window (for historical tracking)
         assignment_180d = _assign_persona_for_window(
             user_id=user_id,
@@ -101,6 +115,19 @@ def assign_persona(
             signals_180d=signals_180d,
             window_days=180
         )
+        
+        # If persona1 was assigned as fallback for 180d, ensure user has overdue credit cards
+        if assignment_180d.persona_id == 'persona1_high_utilization' and 'No other persona matched' in assignment_180d.reasoning:
+            _ensure_overdue_credit_card_for_fallback(user_id, session)
+            # Recalculate signals after updating data
+            signals_30d, signals_180d = calculate_signals(user_id, session=session)
+            # Reassign with updated signals
+            assignment_180d = _assign_persona_for_window(
+                user_id=user_id,
+                signals_30d=signals_30d,
+                signals_180d=signals_180d,
+                window_days=180
+            )
         
         # Save to history if requested
         # Only save if persona has changed (skip_duplicates=True prevents duplicates)
@@ -116,6 +143,116 @@ def assign_persona(
     finally:
         if close_session:
             session.close()
+
+
+def _ensure_overdue_credit_card_for_fallback(user_id: str, session: Session):
+    """
+    Ensure user has at least one credit card with is_overdue=True when assigned persona1 as fallback.
+    
+    This ensures that fallback persona1 users have at least one signal triggered (overdue).
+    """
+    # Get all credit card accounts for this user
+    credit_accounts = session.query(Account).filter(
+        Account.user_id == user_id,
+        Account.type == 'credit_card'
+    ).all()
+    
+    if not credit_accounts:
+        # User has no credit cards - create one with overdue status
+        from spendsense.ingest.generators import SyntheticAccountGenerator, SyntheticLiabilityGenerator
+        
+        account_gen = SyntheticAccountGenerator()
+        liability_gen = SyntheticLiabilityGenerator()
+        
+        # Create a credit card account with balance
+        credit_limit = 10000.0
+        balance = credit_limit * 0.8  # 80% utilization
+        credit_card_data = account_gen.create_account_custom(
+            user_id=user_id,
+            account_type="credit_card",
+            counter=0,
+            credit_limit=credit_limit,
+            balance_range=(balance * 0.95, balance * 1.05),
+            account_id_suffix="000"
+        )
+        credit_account = Account(**credit_card_data)
+        session.add(credit_account)
+        session.flush()
+        
+        # Create liability with is_overdue=True
+        liability_data = liability_gen.generate_liability_for_account(
+            credit_account.account_id,
+            "credit_card",
+            credit_account.balance_current,
+            credit_limit
+        )
+        if liability_data:
+            liability_data['is_overdue'] = True
+            liability = Liability(**liability_data)
+            session.add(liability)
+    else:
+        # User has credit cards - ensure at least one is overdue
+        has_overdue = False
+        for account in credit_accounts:
+            if account.balance_current > 0:
+                liability = session.query(Liability).filter(
+                    Liability.account_id == account.account_id
+                ).first()
+                
+                if liability:
+                    if liability.is_overdue:
+                        has_overdue = True
+                    else:
+                        # Set the first card with balance to overdue
+                        liability.is_overdue = True
+                        has_overdue = True
+                        break
+                else:
+                    # Create liability with is_overdue=True
+                    from spendsense.ingest.generators import SyntheticLiabilityGenerator
+                    liability_gen = SyntheticLiabilityGenerator()
+                    liability_data = liability_gen.generate_liability_for_account(
+                        account.account_id,
+                        "credit_card",
+                        account.balance_current,
+                        account.credit_limit
+                    )
+                    if liability_data:
+                        liability_data['is_overdue'] = True
+                        liability = Liability(**liability_data)
+                        session.add(liability)
+                        has_overdue = True
+                        break
+        
+        # If no overdue card found, set the first card with balance to overdue
+        if not has_overdue:
+            for account in credit_accounts:
+                if account.balance_current > 0:
+                    liability = session.query(Liability).filter(
+                        Liability.account_id == account.account_id
+                    ).first()
+                    if liability:
+                        liability.is_overdue = True
+                        has_overdue = True
+                        break
+                    else:
+                        # Create liability with is_overdue=True
+                        from spendsense.ingest.generators import SyntheticLiabilityGenerator
+                        liability_gen = SyntheticLiabilityGenerator()
+                        liability_data = liability_gen.generate_liability_for_account(
+                            account.account_id,
+                            "credit_card",
+                            account.balance_current,
+                            account.credit_limit
+                        )
+                        if liability_data:
+                            liability_data['is_overdue'] = True
+                            liability = Liability(**liability_data)
+                            session.add(liability)
+                            has_overdue = True
+                            break
+    
+    session.flush()
 
 
 def _assign_persona_for_window(

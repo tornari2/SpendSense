@@ -150,11 +150,17 @@ def create_offer_trace(
         input_signals['triggered_signal'] = signal_context.signal_id
         input_signals['signal_name'] = signal_context.signal_name
     
-    # Simplify eligibility checks - only include what's relevant
+    # Include eligibility checks with the actual criteria that were checked
     eligibility_checks = {
         'eligible': eligibility_result.eligible,
         'reasons': eligibility_result.reasons,
-        'failed_checks': eligibility_result.failed_checks
+        'failed_checks': eligibility_result.failed_checks,
+        'eligibility_criteria': {
+            'min_credit_score': offer.eligibility.min_credit_score,
+            'max_utilization': offer.eligibility.max_utilization,
+            'min_income': offer.eligibility.min_income,
+            'exclude_if_has': offer.eligibility.exclude_if_has
+        }
     }
     
     return DecisionTrace(

@@ -16,7 +16,7 @@ from spendsense.ingest.schema import User, Recommendation, PersonaHistory, Decis
 from spendsense.features.signals import calculate_signals
 from spendsense.personas.assignment import assign_persona
 from spendsense.guardrails.disclosure import append_disclosure
-from .persona_helpers import format_persona_signals
+from .persona_helpers import format_persona_signals, extract_signal_values_from_window
 from spendsense.personas.priority import PERSONA_NAMES
 
 router = APIRouter(tags=["operator-ui"])
@@ -281,25 +281,64 @@ def user_detail_page(
         PersonaHistory.user_id == user_id
     ).order_by(PersonaHistory.assigned_at.desc()).all()
     
-    # Determine which window is the primary persona
-    primary_window_days = None
-    if persona_assignment_30d.persona_id:
-        primary_window_days = 30
-    elif persona_assignment_180d.persona_id:
-        primary_window_days = 180
+    # Find the most recent 30d persona (excluding "none")
+    most_recent_30d_persona = None
+    most_recent_30d_assigned_at = None
+    for ph in persona_history_records:
+        if ph.window_days == 30 and ph.persona != "none":
+            most_recent_30d_persona = ph
+            most_recent_30d_assigned_at = ph.assigned_at
+            break
     
-    persona_history = [
-        {
+    # Find the most recent 180d persona (excluding "none")
+    most_recent_180d_persona = None
+    most_recent_180d_assigned_at = None
+    for ph in persona_history_records:
+        if ph.window_days == 180 and ph.persona != "none":
+            most_recent_180d_persona = ph
+            most_recent_180d_assigned_at = ph.assigned_at
+            break
+    
+    # Convert signals to dict for template
+    signals_30d_dict = signals_30d.to_dict()
+    signals_180d_dict = signals_180d.to_dict()
+    
+    persona_history = []
+    for ph in persona_history_records:
+        # Select the appropriate signals window based on window_days
+        signals_window = signals_30d_dict if ph.window_days == 30 else signals_180d_dict
+        
+        # Extract actual signal values from the signals window
+        signals_formatted = []
+        if ph.signals:
+            signals_formatted = extract_signal_values_from_window(ph.signals, signals_window)
+        
+        # Determine if this is the primary persona (most recent 30d, not "none")
+        is_primary = (
+            ph.window_days == 30 and 
+            ph.persona != "none" and
+            most_recent_30d_assigned_at is not None and
+            ph.assigned_at == most_recent_30d_assigned_at
+        )
+        
+        # Determine if this is the secondary persona (most recent 180d, not "none")
+        is_secondary = (
+            ph.window_days == 180 and 
+            ph.persona != "none" and
+            most_recent_180d_assigned_at is not None and
+            ph.assigned_at == most_recent_180d_assigned_at
+        )
+        
+        persona_history.append({
             "id": ph.id,
             "persona": ph.persona,
             "window_days": ph.window_days,
             "assigned_at": ph.assigned_at.isoformat(),
             "signals": ph.signals,
-            "signals_formatted": format_persona_signals(ph.signals or {}, ph.persona) if ph.signals else [],
-            "is_primary": ph.window_days == primary_window_days if primary_window_days else False
-        }
-        for ph in persona_history_records
-    ]
+            "signals_formatted": signals_formatted,
+            "is_primary": is_primary,
+            "is_secondary": is_secondary
+        })
     
     # Get all recommendations
     recommendations = session.query(Recommendation).filter(

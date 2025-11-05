@@ -154,13 +154,19 @@ def get_user_detail(
         PersonaHistory.user_id == user_id
     ).order_by(PersonaHistory.assigned_at.desc()).all()
     
-    # Debug: Log if no records found (helpful for troubleshooting)
-    if len(persona_history_records) == 0:
-        # Try one more time with a fresh query (in case of session isolation)
-        session.expire_all()
-        persona_history_records = session.query(PersonaHistory).filter(
-            PersonaHistory.user_id == user_id
-        ).order_by(PersonaHistory.assigned_at.desc()).all()
+    # Find the most recent 30d persona (excluding "none")
+    most_recent_30d_assigned_at = None
+    for ph in persona_history_records:
+        if ph.window_days == 30 and ph.persona != "none":
+            most_recent_30d_assigned_at = ph.assigned_at
+            break
+    
+    # Find the most recent 180d persona (excluding "none")
+    most_recent_180d_assigned_at = None
+    for ph in persona_history_records:
+        if ph.window_days == 180 and ph.persona != "none":
+            most_recent_180d_assigned_at = ph.assigned_at
+            break
     
     persona_history = [
         {
@@ -169,7 +175,18 @@ def get_user_detail(
             "window_days": ph.window_days,
             "assigned_at": ph.assigned_at.isoformat(),
             "signals": ph.signals,
-            "is_primary": ph.window_days == primary_window_days if primary_window_days else False
+            "is_primary": (
+                ph.window_days == 30 and 
+                ph.persona != "none" and
+                most_recent_30d_assigned_at is not None and
+                ph.assigned_at == most_recent_30d_assigned_at
+            ),
+            "is_secondary": (
+                ph.window_days == 180 and 
+                ph.persona != "none" and
+                most_recent_180d_assigned_at is not None and
+                ph.assigned_at == most_recent_180d_assigned_at
+            )
         }
         for ph in persona_history_records
     ]

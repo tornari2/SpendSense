@@ -51,7 +51,7 @@ def save_persona_history(
             
             # If latest persona matches current assignment, check if signals_used has changed
             if latest is not None:
-                current_persona = assignment.persona_id or "none"
+                current_persona = assignment.persona_id  # Should never be None now
                 if latest.persona == current_persona:
                     # Persona hasn't changed - but update signals_used if they differ
                     # This ensures signals_used always matches the current Detected Signals
@@ -72,9 +72,10 @@ def save_persona_history(
                     return latest
         
         # Persona changed or no previous history exists - save new record
+        # Note: persona_id should never be None now (fallback to persona4_savings_builder)
         history_record = PersonaHistory(
             user_id=assignment.user_id,
-            persona=assignment.persona_id or "none",
+            persona=assignment.persona_id,  # Should never be None now
             window_days=assignment.window_days,
             assigned_at=assignment.assigned_at,
             signals=assignment.signals_used

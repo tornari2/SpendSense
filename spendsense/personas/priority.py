@@ -52,10 +52,11 @@ def resolve_persona_priority(
     
     Returns:
         Tuple of (persona_id, reasoning, signals_used) for the highest priority persona
-        Returns (None, "No persona assigned", {}) if no personas match
+        If no personas match, assigns persona1_high_utilization as fallback (everyone should have a persona)
     """
     if not matching_personas:
-        return None, "No persona assigned", {}
+        # Fallback: Everyone should have a persona, default to High Utilization (Persona 1)
+        return 'persona1_high_utilization', "No other persona matched - assigned High Utilization as default", {}
     
     # Sort by priority (lower number = higher priority)
     sorted_personas = sorted(
