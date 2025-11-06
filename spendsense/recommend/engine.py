@@ -140,9 +140,18 @@ def generate_recommendations(
             monthly_income=monthly_income if monthly_income > 0 else None
         )
         
-        # If no signals triggered, return empty list
+        # CRITICAL: If user has consent and persona, they MUST have triggered signals
+        # This is a requirement - fail loudly if violated
         if not triggered_signals:
-            return []
+            persona_id = persona_assignment_30d.persona_id or persona_assignment_180d.persona_id
+            raise RuntimeError(
+                f"CRITICAL: User {user_id} has consent=True and persona={persona_id} but NO signals triggered! "
+                f"This violates the requirement that users with personas must have ≥3 behaviors detected. "
+                f"Signals: subscriptions={signals_30d.subscriptions.recurring_merchant_count}, "
+                f"credit_util={signals_30d.credit.max_utilization_percent}%, "
+                f"income={signals_30d.income.payroll_detected}, "
+                f"loans={signals_30d.loans.total_loan_balance}"
+            )
         
         # Determine primary and secondary personas
         primary_persona_id = primary_persona_assignment.persona_id if primary_persona_assignment.persona_id else None

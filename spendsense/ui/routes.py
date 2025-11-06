@@ -10,6 +10,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import json
+from datetime import datetime
+from markupsafe import Markup
 
 from spendsense.ingest.database import get_session
 from spendsense.ingest.schema import User, Recommendation, PersonaHistory, DecisionTrace, Account, Liability
@@ -44,8 +46,150 @@ def tojson_filter(obj, indent=2):
     return json.dumps(obj, indent=indent, default=str)
 
 
-# Add custom filter to templates
+def markdown_to_html(text):
+    """Convert markdown text to HTML.
+    
+    Handles basic markdown formatting:
+    - **bold** -> <strong>bold</strong>
+    - *italic* -> <em>italic</em>
+    - Headers (# ## ###)
+    - Lists (• - *)
+    - Paragraphs
+    
+    IMPORTANT: This function receives raw text (not HTML-escaped).
+    It returns Markup so Jinja2 treats the result as safe HTML.
+    """
+    if not text:
+        return Markup("")
+    
+    # If text is already a Markup object, convert to string
+    if isinstance(text, Markup):
+        text = str(text)
+    
+    import re
+    
+    # Split into lines for processing
+    lines = text.split('\n')
+    result = []
+    in_list = False
+    in_paragraph = False
+    current_paragraph = []
+    
+    def close_paragraph():
+        nonlocal in_paragraph, current_paragraph
+        if in_paragraph and current_paragraph:
+            # Join with <br> tags to preserve line breaks within paragraphs
+            para_text = '<br>'.join(current_paragraph)
+            # Process bold and italic in paragraph
+            para_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', para_text)
+            para_text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', para_text)
+            result.append(f'<p>{para_text}</p>')
+            current_paragraph = []
+            in_paragraph = False
+    
+    def close_list():
+        nonlocal in_list
+        if in_list:
+            result.append('</ul>')
+            in_list = False
+    
+    for line in lines:
+        line_stripped = line.strip()
+        
+        # Empty line - close current paragraph/list
+        if not line_stripped:
+            close_paragraph()
+            close_list()
+            continue
+        
+        # Headers (must come before other processing)
+        if line_stripped.startswith('### '):
+            close_paragraph()
+            close_list()
+            header_text = line_stripped[4:].strip()
+            header_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', header_text)
+            result.append(f'<h3>{header_text}</h3>')
+            continue
+        elif line_stripped.startswith('## '):
+            close_paragraph()
+            close_list()
+            header_text = line_stripped[3:].strip()
+            header_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', header_text)
+            result.append(f'<h2>{header_text}</h2>')
+            continue
+        elif line_stripped.startswith('# '):
+            close_paragraph()
+            close_list()
+            header_text = line_stripped[2:].strip()
+            header_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', header_text)
+            result.append(f'<h1>{header_text}</h1>')
+            continue
+        
+        # List items - check for bullet point (•) or dash (-) or asterisk (*) at start
+        is_list_item = (
+            line_stripped.startswith('• ') or 
+            line_stripped.startswith('- ') or 
+            (line_stripped.startswith('* ') and not line_stripped.startswith('**'))
+        )
+        
+        if is_list_item:
+            close_paragraph()
+            if not in_list:
+                result.append('<ul>')
+                in_list = True
+            # Remove bullet and get text
+            item_text = line_stripped[2:].strip()
+            # Process bold and italic in list items
+            item_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', item_text)
+            item_text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', item_text)
+            result.append(f'<li>{item_text}</li>')
+            continue
+        
+        # Regular paragraph line
+        close_list()
+        if not in_paragraph:
+            in_paragraph = True
+        current_paragraph.append(line_stripped)
+    
+    # Close any open structures
+    close_paragraph()
+    close_list()
+    
+    # Join result
+    html = '\n'.join(result)
+    
+    # Fallback: if result is empty but original isn't, process as simple paragraphs
+    if not html and text.strip():
+        # Split by double newlines for paragraphs
+        paragraphs = re.split(r'\n\n+', text)
+        html_parts = []
+        for para in paragraphs:
+            para = para.strip()
+            if para:
+                # Process bold and italic
+                para = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', para)
+                para = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', para)
+                # Replace single newlines with <br> tags to preserve line breaks
+                para = para.replace('\n', '<br>')
+                html_parts.append(f'<p>{para}</p>')
+        html = '\n'.join(html_parts)
+    
+    # If still empty (all text was in one paragraph with no structure), 
+    # Format as single paragraph with line breaks preserved
+    if not html:
+        html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
+        html = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', html)
+        # Preserve line breaks by converting to <br> tags
+        html = html.replace('\n', '<br>')
+        html = f'<p>{html}</p>'
+    
+    # Return as Markup so Jinja2 treats it as safe HTML
+    return Markup(html)
+
+
+# Add custom filters to templates
 templates.env.filters["tojson"] = tojson_filter
+templates.env.filters["markdown"] = markdown_to_html
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -201,9 +345,14 @@ def user_list(
             latest_persona = persona_180d
         
         # Get recommendation count
-        rec_count = session.query(Recommendation).filter(
-            Recommendation.user_id == user.user_id
-        ).count()
+        # Only count recommendations if user has consented
+        # If consent is False, count should be 0 (recommendations should be deleted)
+        if user.consent_status is True:
+            rec_count = session.query(Recommendation).filter(
+                Recommendation.user_id == user.user_id
+            ).count()
+        else:
+            rec_count = 0
         
         # Get latest recommendation timestamp
         latest_rec = session.query(Recommendation).filter(
@@ -606,3 +755,283 @@ def evaluation_dashboard(
         }
     )
 
+
+@router.get("/user-view", response_class=HTMLResponse)
+def user_view_selection(
+    request: Request,
+    session: Session = Depends(get_db_session)
+):
+    """
+    User View selection page - allows operator to select which user to view.
+    """
+    # Get all users
+    users = session.query(User).order_by(User.created_at.desc()).limit(50).all()
+    
+    return templates.TemplateResponse(
+        "user_view_selection.html",
+        {
+            "request": request,
+            "users": users
+        }
+    )
+
+
+@router.get("/user-view/{user_id}", response_class=HTMLResponse)
+def user_view_page(
+    request: Request,
+    user_id: str,
+    session: Session = Depends(get_db_session)
+):
+    """
+    Display user-facing recommendations page.
+    Shows only approved/pending recommendations (excludes flagged/rejected).
+    Requires user consent to display recommendations.
+    If user has consented but no recommendations exist, generates them.
+    """
+    from spendsense.recommend.engine import generate_recommendations
+    
+    # Get user
+    user = session.query(User).filter(User.user_id == user_id).first()
+    
+    if not user:
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "error": f"User {user_id} not found"
+            },
+            status_code=404
+        )
+    
+    # Only fetch recommendations if user has consented
+    # If consent is False, ensure no recommendations exist (cleanup orphaned records)
+    recommendations_list = []
+    if user.consent_status is True:
+        # Get recommendations - filter out flagged, rejected, and hidden (user-deleted)
+        recommendations = session.query(Recommendation).filter(
+            Recommendation.user_id == user_id,
+            Recommendation.status.in_(['pending', 'approved'])
+        ).order_by(Recommendation.created_at.desc()).all()
+        
+        # If user has consented but no recommendations exist, generate them
+        if not recommendations:
+            try:
+                generate_recommendations(
+                    user_id=user_id,
+                    session=session,
+                    max_education=5,
+                    max_offers=3
+                )
+                # Refresh session to ensure new recommendations are visible
+                session.expire_all()
+                # Refresh the query to get newly generated recommendations
+                recommendations = session.query(Recommendation).filter(
+                    Recommendation.user_id == user_id,
+                    Recommendation.status.in_(['pending', 'approved'])
+                ).order_by(Recommendation.created_at.desc()).all()
+            except Exception as e:
+                # Log error but continue - user will see "no recommendations" message
+                print(f"Warning: Failed to generate recommendations: {e}")
+        
+        # Process recommendations for display - filter out hidden recommendations
+        for rec in recommendations:
+            # Skip hidden (user-deleted) recommendations
+            if rec.status == 'hidden':
+                continue
+                
+            content_with_disclosure = append_disclosure(rec.content, rec.recommendation_type)
+            
+            recommendations_list.append({
+                "recommendation_id": rec.recommendation_id,
+                "user_id": rec.user_id,
+                "type": rec.recommendation_type,
+                "content": content_with_disclosure,  # Markdown format - will be rendered by template filter
+                "rationale": rec.rationale,
+                "persona": rec.persona,
+                "created_at": rec.created_at,
+                "status": rec.status
+            })
+        
+        # Sort recommendations: offers first, then education
+        recommendations_list.sort(key=lambda x: (x["type"] != "offer", x["created_at"]))
+    else:
+        # If consent is False, ensure no recommendations exist (cleanup orphaned records)
+        # This is a safeguard in case recommendations weren't deleted when consent was revoked
+        orphaned_recs = session.query(Recommendation).filter(
+            Recommendation.user_id == user_id
+        ).all()
+        if orphaned_recs:
+            try:
+                # Delete associated DecisionTrace records first
+                for rec in orphaned_recs:
+                    traces = session.query(DecisionTrace).filter(
+                        DecisionTrace.recommendation_id == rec.recommendation_id
+                    ).all()
+                    for trace in traces:
+                        session.delete(trace)
+                
+                # Delete orphaned recommendations
+                for rec in orphaned_recs:
+                    session.delete(rec)
+                
+                session.commit()
+                print(f"Cleaned up {len(orphaned_recs)} orphaned recommendations for user {user_id} with no consent")
+            except Exception as e:
+                session.rollback()
+                print(f"Warning: Failed to cleanup orphaned recommendations: {e}")
+    
+    response = templates.TemplateResponse(
+        "user_recommendations.html",
+        {
+            "request": request,
+            "user": {
+                "user_id": user.user_id,
+                "name": user.name,
+                "email": user.email,
+                "consent_status": user.consent_status
+            },
+            "recommendations": recommendations_list,
+            "has_consent": user.consent_status is True
+        }
+    )
+    # Prevent caching so back button shows current state
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@router.post("/user-view/{user_id}/consent")
+def update_user_consent(
+    request: Request,
+    user_id: str,
+    consent_status: bool = Form(...),
+    session: Session = Depends(get_db_session)
+):
+    """
+    Update user consent status from user-facing page.
+    If consent is granted, generate recommendations for the user.
+    If consent is revoked, delete all recommendations for the user.
+    """
+    from spendsense.guardrails.consent import update_consent
+    from spendsense.recommend.engine import generate_recommendations
+    
+    try:
+        # Get current consent status before updating
+        user = session.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+        
+        previous_consent_status = user.consent_status
+        
+        # Update consent
+        update_consent(
+            user_id=user_id,
+            consent_status=consent_status,
+            session=session,
+            source="user_ui",
+            notes=f"Consent {'granted' if consent_status else 'revoked'} via user interface"
+        )
+        
+        # If consent was just revoked (was True, now False), delete all recommendations
+        if not consent_status and previous_consent_status:
+            try:
+                # Get all recommendations for this user
+                recommendations = session.query(Recommendation).filter(
+                    Recommendation.user_id == user_id
+                ).all()
+                
+                # Delete associated DecisionTrace records first (if they exist)
+                for rec in recommendations:
+                    traces = session.query(DecisionTrace).filter(
+                        DecisionTrace.recommendation_id == rec.recommendation_id
+                    ).all()
+                    for trace in traces:
+                        session.delete(trace)
+                
+                # Delete all recommendations
+                for rec in recommendations:
+                    session.delete(rec)
+                
+                session.commit()
+                print(f"Deleted {len(recommendations)} recommendations for user {user_id} after consent revocation")
+            except Exception as e:
+                # Log error but don't fail the consent update
+                session.rollback()
+                print(f"Warning: Failed to delete recommendations after consent revocation: {e}")
+        
+        # If consent was just granted (was False/None, now True), generate recommendations
+        if consent_status and not previous_consent_status:
+            try:
+                # Generate recommendations for the user
+                generate_recommendations(
+                    user_id=user_id,
+                    session=session,
+                    max_education=5,
+                    max_offers=3
+                )
+            except Exception as e:
+                # Log error but don't fail the consent update
+                # Recommendations may be generated on next page load if needed
+                print(f"Warning: Failed to generate recommendations after consent grant: {e}")
+        
+        # Redirect back to user view page with cache-busting
+        # Add timestamp to prevent browser from showing cached version
+        redirect_url = f"/user-view/{user_id}?_t={int(datetime.now().timestamp())}"
+        response = RedirectResponse(url=redirect_url, status_code=303)
+        # Prevent caching of redirect
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    except ValueError as e:
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "error": str(e)
+            },
+            status_code=400
+        )
+
+
+@router.post("/user-view/{user_id}/recommendations/{recommendation_id}/delete")
+def delete_user_recommendation(
+    request: Request,
+    user_id: str,
+    recommendation_id: str,
+    session: Session = Depends(get_db_session)
+):
+    """
+    Hide/delete a recommendation from the user view.
+    Sets the recommendation status to 'hidden' so it persists.
+    """
+    # Get the recommendation
+    recommendation = session.query(Recommendation).filter(
+        Recommendation.recommendation_id == recommendation_id,
+        Recommendation.user_id == user_id
+    ).first()
+    
+    if not recommendation:
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "error": f"Recommendation {recommendation_id} not found"
+            },
+            status_code=404
+        )
+    
+    # Mark as hidden (user-deleted) instead of actually deleting
+    recommendation.status = 'hidden'
+    session.commit()
+    
+    # Redirect back to user view page with cache-busting
+    # Add timestamp to prevent browser from showing cached version
+    redirect_url = f"/user-view/{user_id}?_t={int(datetime.now().timestamp())}"
+    response = RedirectResponse(url=redirect_url, status_code=303)
+    # Prevent caching of redirect
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response

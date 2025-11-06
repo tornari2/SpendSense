@@ -22,6 +22,8 @@ from spendsense.ingest.generators import (
 from spendsense.recommend.engine import generate_recommendations
 from spendsense.personas.assignment import assign_persona
 from spendsense.features.signals import calculate_signals
+from spendsense.recommend.signals import detect_all_signals
+from spendsense.ingest.merchants import get_subscription_merchants, get_merchant_info
 
 # Set seed for reproducibility - USE CONSTANT VALUE FOR CONSISTENT RESULTS
 RANDOM_SEED = 42  # Constant seed for reproducibility
@@ -321,29 +323,60 @@ def create_user_for_persona(
     
     # Assign persona for ALL users (both consented and non-consented)
     # Non-consented users get personas but no recommendations
-    try:
-        # Assign persona first
-        signals_30d, signals_180d = calculate_signals(user.user_id, session=session)
-        assign_persona(
-            user.user_id,
-            signals_30d,
-            signals_180d,
+    # CRITICAL: This MUST succeed - fail loudly if it doesn't
+    
+    # Assign persona first - MUST succeed
+    signals_30d, signals_180d = calculate_signals(user.user_id, session=session)
+    persona_assignment_30d, persona_assignment_180d = assign_persona(
+        user.user_id,
+        signals_30d,
+        signals_180d,
+        session=session,
+        save_history=True
+    )
+    
+    # VALIDATE: User MUST have a persona assigned
+    if not persona_assignment_30d.persona_id and not persona_assignment_180d.persona_id:
+        raise RuntimeError(
+            f"CRITICAL: User {user.user_id} does not have a persona assigned! "
+            f"This violates the requirement that ALL users must have personas."
+        )
+    
+    # Ensure user has at least 3 signals triggered
+    _ensure_user_has_3plus_signals(user.user_id, accounts, session, account_gen, transaction_gen, liability_gen)
+    
+    # Generate recommendations ONLY for consented users
+    # CRITICAL: Consented users MUST have recommendations - fail loudly if not generated
+    if user.consent_status:
+        recommendations = generate_recommendations(
+            user_id=user.user_id,
             session=session,
-            save_history=True
+            max_education=5,
+            max_offers=3
         )
         
-        # Generate recommendations ONLY for consented users
-        if user.consent_status:
-            recommendations = generate_recommendations(
-                user_id=user.user_id,
-                session=session,
-                max_education=5,
-                max_offers=3
+        # VALIDATE: Consented users MUST have recommendations
+        if not recommendations or len(recommendations) == 0:
+            raise RuntimeError(
+                f"CRITICAL: User {user.user_id} has consent=True but NO recommendations were generated! "
+                f"This violates the requirement that ALL consented users MUST have recommendations. "
+                f"Persona: {persona_assignment_30d.persona_id or persona_assignment_180d.persona_id}"
             )
-            # Recommendations are automatically saved by generate_recommendations
-    except Exception as e:
-        # Log error but don't fail user creation
-        print(f"    Warning: Could not assign persona/recommendations for {user.user_id}: {e}")
+        
+        # VALIDATE: Recommendations were actually saved to database
+        from spendsense.ingest.schema import Recommendation
+        saved_rec_count = session.query(Recommendation).filter(
+            Recommendation.user_id == user.user_id
+        ).count()
+        
+        if saved_rec_count == 0:
+            raise RuntimeError(
+                f"CRITICAL: User {user.user_id} recommendations were generated but NOT saved to database! "
+                f"Generated {len(recommendations)} recommendations but 0 found in DB."
+            )
+        
+        # Commit to ensure recommendations are persisted
+        session.commit()
     
     return user
 
@@ -1587,6 +1620,236 @@ def _ensure_interest_charges(account_id: str, transactions_list: List[Dict]) -> 
     return transactions_list
 
 
+def _ensure_user_has_3plus_signals(
+    user_id: str,
+    existing_accounts: List[Account],
+    session: Session,
+    account_gen: SyntheticAccountGenerator,
+    transaction_gen: SyntheticTransactionGenerator,
+    liability_gen: SyntheticLiabilityGenerator
+):
+    """
+    Ensure user has at least 3 signals triggered by adding additional accounts/transactions if needed.
+    
+    Args:
+        user_id: User ID
+        existing_accounts: List of existing accounts for this user
+        session: Database session
+        account_gen: Account generator
+        transaction_gen: Transaction generator
+        liability_gen: Liability generator
+    """
+    # Calculate current signals
+    signals_30d, signals_180d = calculate_signals(user_id, session=session)
+    
+    # Get accounts and liabilities
+    accounts = session.query(Account).filter(Account.user_id == user_id).all()
+    credit_account_ids = [a.account_id for a in accounts if a.type == 'credit_card']
+    liabilities = []
+    if credit_account_ids:
+        liability_records = session.query(Liability).filter(
+            Liability.account_id.in_(credit_account_ids)
+        ).all()
+        liabilities = liability_records
+    
+    # Calculate monthly income
+    monthly_income = 0.0
+    if signals_30d.income.payroll_detected and signals_30d.income.total_income > 0:
+        monthly_income = (signals_30d.income.total_income / signals_30d.window_days) * 30
+    
+    # Detect current signals
+    triggered_signals = detect_all_signals(
+        signals=signals_30d,
+        accounts=accounts,
+        liabilities=liabilities,
+        monthly_income=monthly_income if monthly_income > 0 else None
+    )
+    
+    signal_ids = {s.signal_id for s in triggered_signals}
+    
+    # If already have 3+ signals, return
+    if len(signal_ids) >= 3:
+        return
+    
+    # Determine which signals to add
+    signals_to_add = []
+    accounts_added = []
+    
+    # Signal 6: Subscription heavy (easiest to add - just need transactions)
+    if 'signal_6' not in signal_ids:
+        if signals_30d.subscriptions.recurring_merchant_count < 3:
+            # Add subscription transactions to checking account
+            checking_accounts = [a for a in accounts if a.type == 'checking']
+            if checking_accounts:
+                checking = checking_accounts[0]
+                # Add subscription transactions
+                subscription_merchants = get_subscription_merchants()
+                subscription_transactions = []
+                for i in range(3 - signals_30d.subscriptions.recurring_merchant_count):
+                    merchant = random.choice(subscription_merchants)
+                    merchant_info = get_merchant_info(merchant)
+                    # Add monthly subscription for each month
+                    for month_offset in range(3):
+                        subscription_date = datetime.now().date() - timedelta(days=(month_offset * 30) + random.randint(1, 28))
+                        subscription_txn = {
+                            "transaction_id": str(uuid.uuid4()),
+                            "account_id": checking.account_id,
+                            "date": subscription_date,
+                            "amount": -random.uniform(15, 50),  # Negative = expense
+                            "merchant_name": merchant_info.get('name', merchant) if merchant_info else merchant,
+                            "merchant_entity_id": merchant_info.get('entity_id') if merchant_info else None,
+                            "payment_channel": merchant_info.get('payment_channel', 'debit') if merchant_info else 'debit',
+                            "category_primary": merchant_info.get('category_primary', 'Services') if merchant_info else 'Services',
+                            "category_detailed": merchant_info.get('category_detailed', 'Subscription') if merchant_info else 'Subscription',
+                            "pending": False
+                        }
+                        subscription_transactions.append(subscription_txn)
+                
+                for txn_data in subscription_transactions:
+                    session.add(Transaction(**txn_data))
+                signals_to_add.append('signal_6')
+    
+    # Recalculate signals after adding subscriptions
+    if signals_to_add:
+        session.flush()
+        signals_30d, signals_180d = calculate_signals(user_id, session=session)
+        
+        accounts = session.query(Account).filter(Account.user_id == user_id).all()
+        credit_account_ids = [a.account_id for a in accounts if a.type == 'credit_card']
+        liabilities = []
+        if credit_account_ids:
+            liability_records = session.query(Liability).filter(
+                Liability.account_id.in_(credit_account_ids)
+            ).all()
+            liabilities = liability_records
+        
+        monthly_income = 0.0
+        if signals_30d.income.payroll_detected and signals_30d.income.total_income > 0:
+            monthly_income = (signals_30d.income.total_income / signals_30d.window_days) * 30
+        
+        triggered_signals = detect_all_signals(
+            signals=signals_30d,
+            accounts=accounts,
+            liabilities=liabilities,
+            monthly_income=monthly_income if monthly_income > 0 else None
+        )
+        signal_ids = {s.signal_id for s in triggered_signals}
+    
+    # If still need more signals, add signal_7 (Savings Builder)
+    if len(signal_ids) < 3 and 'signal_7' not in signal_ids:
+        # Check if user has savings account
+        savings_accounts = [a for a in accounts if a.type == 'savings']
+        
+        # Check if credit utilization is low enough (<30%)
+        if signals_30d.credit.max_utilization_percent < 30.0:
+            # Add savings account if not present
+            if not savings_accounts:
+                savings_data = account_gen.create_account_custom(
+                    user_id=user_id,
+                    account_type="savings",
+                    counter=len(accounts),
+                    balance_range=(5000, 15000),
+                    account_id_suffix="savings"
+                )
+                savings_account = Account(**savings_data)
+                session.add(savings_account)
+                session.flush()
+                accounts_added.append(savings_account)
+                accounts.append(savings_account)
+                savings_accounts = [savings_account]
+            
+            # Ensure savings growth >= 2% or net inflow >= $200/month
+            if savings_accounts:
+                savings = savings_accounts[0]
+                # Add transactions to create growth
+                # Start with lower balance 3 months ago, add deposits
+                initial_balance = savings.balance_current * 0.94  # 6% growth over 3 months ≈ 2% per month
+                savings.balance_current = initial_balance
+                
+                # Add monthly deposits to create growth
+                for month_offset in range(3):
+                    deposit_date = datetime.now().date() - timedelta(days=(month_offset * 30) + random.randint(1, 28))
+                    deposit_amount = random.uniform(250, 400)  # $250-400/month = $750-1200 over 3 months
+                    deposit_txn = {
+                        "transaction_id": str(uuid.uuid4()),
+                        "account_id": savings.account_id,
+                        "date": deposit_date,
+                        "amount": deposit_amount,
+                        "merchant_name": "Transfer",
+                        "merchant_entity_id": "transfer_001",
+                        "payment_channel": "other",
+                        "category_primary": "Transfer",
+                        "category_detailed": "Deposit",
+                        "pending": False
+                    }
+                    session.add(Transaction(**deposit_txn))
+                
+                # Update final balance
+                savings.balance_current = initial_balance + (3 * 350)  # ~$1050 added over 3 months
+                signals_to_add.append('signal_7')
+    
+    # Recalculate signals one more time
+    if signals_to_add:
+        session.flush()
+        signals_30d, signals_180d = calculate_signals(user_id, session=session)
+        
+        accounts = session.query(Account).filter(Account.user_id == user_id).all()
+        credit_account_ids = [a.account_id for a in accounts if a.type == 'credit_card']
+        liabilities = []
+        if credit_account_ids:
+            liability_records = session.query(Liability).filter(
+                Liability.account_id.in_(credit_account_ids)
+            ).all()
+            liabilities = liability_records
+        
+        monthly_income = 0.0
+        if signals_30d.income.payroll_detected and signals_30d.income.total_income > 0:
+            monthly_income = (signals_30d.income.total_income / signals_30d.window_days) * 30
+        
+        triggered_signals = detect_all_signals(
+            signals=signals_30d,
+            accounts=accounts,
+            liabilities=liabilities,
+            monthly_income=monthly_income if monthly_income > 0 else None
+        )
+        signal_ids = {s.signal_id for s in triggered_signals}
+    
+    # If still need more signals and user has credit cards, ensure signal_1 (high utilization) or signal_2 (interest)
+    if len(signal_ids) < 3:
+        credit_accounts = [a for a in accounts if a.type == 'credit_card']
+        
+        if credit_accounts and 'signal_1' not in signal_ids and 'signal_2' not in signal_ids:
+            # Add signal_2 (interest charges) by ensuring liability has APR
+            for account in credit_accounts:
+                if account.balance_current > 0:
+                    liability = session.query(Liability).filter(
+                        Liability.account_id == account.account_id
+                    ).first()
+                    
+                    if liability:
+                        if not liability.apr_percentage:
+                            liability.apr_percentage = random.uniform(18.0, 28.0)
+                            # Add interest charge transaction
+                            interest_amount = account.balance_current * (liability.apr_percentage / 100) / 12
+                            interest_txn = {
+                                "transaction_id": str(uuid.uuid4()),
+                                "account_id": account.account_id,
+                                "date": datetime.now().date() - timedelta(days=random.randint(1, 30)),
+                                "amount": interest_amount,
+                                "merchant_name": "Finance Charge",
+                                "merchant_entity_id": "interest_001",
+                                "payment_channel": "other",
+                                "category_primary": "Banking",
+                                "category_detailed": "Interest",
+                                "pending": False
+                            }
+                            session.add(Transaction(**interest_txn))
+                            signals_to_add.append('signal_2')
+                            break
+    
+    session.flush()
+
+
 def _ensure_minimum_payment_transactions(
     account_id: str, 
     transactions_list: List[Dict], 
@@ -1820,8 +2083,45 @@ def generate_persona_distributed_users(num_users: int = 100):
     print(f"  Total Users: {total_users}")
     print(f"  Users with Consent: {consent_users} ({consent_users/total_users*100:.1f}%)")
     print(f"  Users without Consent: {no_consent_users} ({no_consent_users/total_users*100:.1f}%)")
-    print(f"\n  Expected: 100 users, 90 consent (90%), 10 no consent (10%)")
+    
+    # CRITICAL VALIDATION: All users must have personas
+    from spendsense.ingest.schema import PersonaHistory
+    users_with_personas = session.query(User.user_id).join(
+        PersonaHistory, PersonaHistory.user_id == User.user_id
+    ).filter(PersonaHistory.window_days == 30).distinct().count()
+    
+    if users_with_personas != total_users:
+        missing_personas = total_users - users_with_personas
+        raise RuntimeError(
+            f"CRITICAL VALIDATION FAILED: {missing_personas} users do NOT have personas assigned! "
+            f"Expected {total_users} users with personas, found {users_with_personas}. "
+            f"This violates the requirement that ALL users must have personas."
+        )
+    print(f"  ✅ All {total_users} users have personas assigned")
+    
+    # CRITICAL VALIDATION: All consented users MUST have recommendations
+    from spendsense.ingest.schema import Recommendation
+    consent_users_with_recs = session.query(User.user_id).join(
+        Recommendation, Recommendation.user_id == User.user_id
+    ).filter(User.consent_status == True).distinct().count()
+    
+    if consent_users_with_recs != consent_users:
+        missing_recs = consent_users - consent_users_with_recs
+        raise RuntimeError(
+            f"CRITICAL VALIDATION FAILED: {missing_recs} consented users do NOT have recommendations! "
+            f"Expected {consent_users} consented users with recommendations, found {consent_users_with_recs}. "
+            f"This violates the requirement that ALL consented users MUST have recommendations."
+        )
+    print(f"  ✅ All {consent_users} consented users have recommendations")
+    
+    # Count total recommendations
+    total_recs = session.query(Recommendation).count()
+    print(f"  Total Recommendations Generated: {total_recs}")
+    
+    print(f"\n  Expected: {num_users} users, {int(num_users*0.9)} consent (90%), {int(num_users*0.1)} no consent (10%)")
     print(f"{'='*60}\n")
+    
+    print("✅ ALL VALIDATIONS PASSED - User generation successful!")
     
     session.close()
 

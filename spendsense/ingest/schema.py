@@ -133,11 +133,17 @@ class DecisionTrace(Base):
     trace_id = Column(String, primary_key=True)
     recommendation_id = Column(String, ForeignKey('recommendations.recommendation_id'), nullable=False)
     input_signals = Column(JSON, nullable=False)  # All signals used
+    triggered_signals = Column(JSON, nullable=True)  # List of signal IDs that triggered this recommendation
+    signal_context = Column(JSON, nullable=True)  # Signal-specific context data
     persona_assigned = Column(String, nullable=True)
     persona_reasoning = Column(Text, nullable=True)
     template_used = Column(String, nullable=True)
     variables_inserted = Column(JSON, nullable=True)
+    variable_sources = Column(JSON, nullable=True)  # Source of each variable (where it came from)
     eligibility_checks = Column(JSON, nullable=True)
+    base_data = Column(JSON, nullable=True)  # Base data (transactions, accounts, liabilities) used to derive signals
+    rationale_variables = Column(JSON, nullable=True)  # Variables used in rationale generation
+    rationale_variable_sources = Column(JSON, nullable=True)  # Sources of rationale variables
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     version = Column(String, default='1.0', nullable=False)
     

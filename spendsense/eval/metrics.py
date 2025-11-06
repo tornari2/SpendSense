@@ -292,6 +292,8 @@ def calculate_relevance(session: Session) -> Dict:
     
     Target: High percentage (manual review or simple scoring)
     """
+    from spendsense.personas.priority import PERSONA_NAMES
+    
     total_recommendations = session.query(Recommendation).count()
     
     if total_recommendations == 0:
@@ -302,6 +304,9 @@ def calculate_relevance(session: Session) -> Dict:
             'by_type': {}
         }
     
+    # Create reverse mapping: persona display name -> persona_id
+    persona_name_to_id = {v: k for k, v in PERSONA_NAMES.items()}
+    
     # Get all education recommendations
     education_recommendations = session.query(Recommendation).filter(
         Recommendation.recommendation_type == "education"
@@ -311,20 +316,28 @@ def calculate_relevance(session: Session) -> Dict:
     by_type = {}
     
     for rec in education_recommendations:
-        # Get user's current persona assignment
+        # Get user's current persona assignment (30-day window)
         latest_persona = session.query(PersonaHistory).filter(
             PersonaHistory.user_id == rec.user_id,
             PersonaHistory.window_days == 30
         ).order_by(PersonaHistory.assigned_at.desc()).first()
         
         if latest_persona:
-            user_persona = latest_persona.persona
+            user_persona_id = latest_persona.persona  # This is persona_id like "persona1_high_utilization"
+            
+            # Convert recommendation persona (display name) to persona_id
+            # rec.persona is the display name like "High Utilization"
+            rec_persona_id = None
+            if rec.persona:
+                # Try direct mapping first (in case it's already an ID)
+                if rec.persona in PERSONA_NAMES:
+                    rec_persona_id = rec.persona
+                else:
+                    # Map display name to ID
+                    rec_persona_id = persona_name_to_id.get(rec.persona)
             
             # Check if recommendation persona matches user's persona
-            # Also check if recommendation is relevant to the persona
-            # For now, assume if persona matches, it's relevant
-            # More sophisticated scoring could check decision trace for persona match
-            if rec.persona == user_persona:
+            if rec_persona_id and rec_persona_id == user_persona_id:
                 relevant_count += 1
                 match_status = "match"
             else:

@@ -3,10 +3,14 @@
 {% block title %}Users - SpendSense{% endblock %}
 
 {% block content %}
-<div class="user-list">
-    <h2>User List</h2>
+<div class="user-detail">
+    <div class="user-header">
+        <h2>User List</h2>
+    </div>
     
-    <div class="filters">
+    <!-- Filters Section -->
+    <section class="section">
+        <h3>Filters</h3>
         <form method="get" action="/users" class="filter-form">
             <div class="form-group">
                 <label for="search">Search:</label>
@@ -35,62 +39,66 @@
             <button type="submit" class="btn btn-primary">Filter</button>
             <a href="/users" class="btn btn-secondary">Clear</a>
         </form>
-    </div>
+    </section>
     
-    <div class="user-table-container">
-        <table class="user-table">
-            <thead>
-                <tr>
-                    <th>User ID</th>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Persona (30d)</th>
-                    <th>Consent</th>
-                    <th>Recommendations</th>
-                    <th>Last Activity</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in users %}
-                <tr>
-                    <td><code>{{ item.user.user_id }}</code></td>
-                    <td>{{ item.user.name or "N/A" }}</td>
-                    <td>{{ item.user.email or "N/A" }}</td>
-                    <td>
-                        {% if item.current_persona %}
-                            <span class="badge badge-persona">{{ item.current_persona }}</span>
-                        {% else %}
-                            <span class="badge badge-none">None</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if item.user.consent_status %}
-                            <span class="badge badge-success">Consented</span>
-                        {% else %}
-                            <span class="badge badge-error">Not Consented</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ item.recommendation_count }}</td>
-                    <td>
-                        {% if item.last_activity %}
-                            {{ item.last_activity.strftime('%Y-%m-%d %H:%M') }}
-                        {% else %}
-                            Never
-                        {% endif %}
-                    </td>
-                    <td>
-                        <a href="/users/{{ item.user.user_id }}" class="btn btn-small btn-primary">View</a>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="8" class="empty-state">No users found</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+    <!-- Users Table Section -->
+    <section class="section">
+        <h3>Users</h3>
+        <div class="user-table-container">
+            <table class="user-table">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Persona (30d)</th>
+                        <th>Consent</th>
+                        <th>Recommendations</th>
+                        <th>Last Activity</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in users %}
+                    <tr>
+                        <td><code>{{ item.user.user_id }}</code></td>
+                        <td>{{ item.user.name or "N/A" }}</td>
+                        <td>{{ item.user.email or "N/A" }}</td>
+                        <td>
+                            {% if item.current_persona %}
+                                <span class="badge badge-persona">{{ item.current_persona }}</span>
+                            {% else %}
+                                <span class="badge badge-none">None</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.user.consent_status %}
+                                <span class="badge badge-success">Consented</span>
+                            {% else %}
+                                <span class="badge badge-error">Not Consented</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.recommendation_count }}</td>
+                        <td>
+                            {% if item.last_activity %}
+                                {{ item.last_activity.strftime('%Y-%m-%d %H:%M') }}
+                            {% else %}
+                                Never
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="/users/{{ item.user.user_id }}" class="btn btn-small btn-primary">View</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="empty-state">No users found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>
 {% endblock %}
 

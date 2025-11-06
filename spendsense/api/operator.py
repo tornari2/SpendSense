@@ -77,7 +77,7 @@ def get_approval_queue(
             }
         
         # Ensure disclosure is present (in case it wasn't added when saved)
-        content_with_disclosure = append_disclosure(rec.content)
+        content_with_disclosure = append_disclosure(rec.content, rec.recommendation_type)
         
         operator_recs.append(OperatorRecommendation(
             recommendation_id=rec.recommendation_id,
@@ -221,7 +221,7 @@ def get_user_detail(
             decision_traces.append(trace_dict)
         
         # Ensure disclosure is present (in case it wasn't added when saved)
-        content_with_disclosure = append_disclosure(rec.content)
+        content_with_disclosure = append_disclosure(rec.content, rec.recommendation_type)
         
         operator_recs.append(OperatorRecommendation(
             recommendation_id=rec.recommendation_id,

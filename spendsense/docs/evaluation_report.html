@@ -1,0 +1,128 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SpendSense Evaluation Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #2c3e50; }
+        h2 { color: #34495e; border-bottom: 2px solid #3498db; padding-bottom: 5px; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #34495e; color: white; }
+        .metric { margin: 10px 0; }
+        .metric-value { font-size: 1.5em; font-weight: bold; color: #2c3e50; }
+    </style>
+</head>
+<body>
+    <h1>SpendSense Evaluation Report</h1>
+    <p><strong>Generated:</strong> 2025-11-05T22:28:41.026118</p>
+    
+    <h2>Summary Metrics</h2>
+    <div class="metric">
+        <strong>Coverage:</strong> <span class="metric-value">84.7%</span>
+    </div>
+    <div class="metric">
+        <strong>Explainability:</strong> <span class="metric-value">100.0%</span>
+    </div>
+    <div class="metric">
+        <strong>Auditability:</strong> <span class="metric-value">100.0%</span>
+    </div>
+    <div class="metric">
+        <strong>Consent Enforcement:</strong> <span class="metric-value">✓ PASS</span>
+    </div>
+    <div class="metric">
+        <strong>Eligibility Compliance:</strong> <span class="metric-value">100.0%</span>
+    </div>
+        <div class="metric">
+            <strong>Tone Compliance:</strong> <span class="metric-value">100.0%</span>
+        </div>
+        <div class="metric">
+            <strong>Relevance:</strong> <span class="metric-value">100.0%</span>
+        </div>
+    
+    <h2>User Statistics</h2>
+    <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Total Users</td><td>118</td></tr>
+        <tr><td>Users with Consent</td><td>101</td></tr>
+        <tr><td>Users with Recommendations</td><td>91</td></tr>
+    </table>
+    
+    <h2>Recommendation Statistics</h2>
+    <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Total Recommendations</td><td>601</td></tr>
+    </table>
+    
+    <h3>By Type</h3>
+    <table>
+        <tr><th>Type</th><th>Count</th></tr>
+        <tr><td>offer</td><td>244</td></tr><tr><td>education</td><td>357</td></tr>
+    </table>
+    
+    <h3>By Status</h3>
+    <table>
+        <tr><th>Status</th><th>Count</th></tr>
+        <tr><td>approved</td><td>2</td></tr><tr><td>rejected</td><td>1</td></tr><tr><td>pending</td><td>598</td></tr>
+    </table>
+    
+    <h2>Detailed Metrics</h2>
+    <pre>{
+  "coverage": {
+    "coverage_percent": 84.7457627118644,
+    "users_with_persona": 100,
+    "users_with_3_signals": 100,
+    "users_with_both": 100,
+    "total_users": 118
+  },
+  "explainability": {
+    "explainability_percent": 100.0,
+    "recommendations_with_rationale": 601,
+    "total_recommendations": 601
+  },
+  "auditability": {
+    "auditability_percent": 100.0,
+    "recommendations_with_trace": 601,
+    "total_recommendations": 601
+  },
+  "consent_enforcement": {
+    "compliant": true,
+    "recommendations_without_consent": 0,
+    "total_recommendations": 601,
+    "users_without_consent": 17,
+    "total_users": 118
+  },
+  "latency": {
+    "p50_latency_seconds": 2.5,
+    "p95_latency_seconds": 4.5,
+    "p99_latency_seconds": 5.0,
+    "average_latency_seconds": 2.8,
+    "max_latency_seconds": 5.0,
+    "min_latency_seconds": 1.0
+  },
+  "eligibility_compliance": {
+    "compliance_percent": 100.0,
+    "recommendations_passed_eligibility": 601,
+    "recommendations_failed_eligibility": 0,
+    "total_recommendations": 601
+  },
+  "tone_compliance": {
+    "compliance_percent": 100.0,
+    "recommendations_without_violations": 601,
+    "recommendations_with_violations": 0,
+    "total_recommendations": 601,
+    "violation_types": {}
+  },
+  "relevance": {
+    "relevance_percent": 100.0,
+    "relevant_recommendations": 357,
+    "total_education_recommendations": 357,
+    "total_recommendations": 601,
+    "by_type": {
+      "match": 357
+    }
+  }
+}</pre>
+</body>
+</html>

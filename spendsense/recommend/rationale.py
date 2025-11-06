@@ -154,7 +154,7 @@ def generate_education_rationale(
     signal_id = template.signal_id if hasattr(template, 'signal_id') else None
     persona_id = template.persona_id
     
-    # If we have signal context, use signal-based rationale
+    # If we have signal context, use signal-based rationale (prioritize this)
     if signal_context:
         signal_id = signal_context.signal_id
         context_data = signal_context.context_data
@@ -173,9 +173,11 @@ def generate_education_rationale(
             highest_card = context_data.get('highest_card', {})
             monthly_interest = highest_card.get('monthly_interest', 0)
             apr = highest_card.get('apr', 0)
+            balance = highest_card.get('balance', 0)
             rationale = (
                 f"You're paying approximately ${monthly_interest:.2f}/month in interest charges "
-                f"at a {apr:.1f}% APR. This content will help you reduce these interest costs."
+                f"on a ${balance:,.2f} balance at {apr:.1f}% APR. This content will help you "
+                f"reduce these interest costs."
             )
         
         elif signal_id == "signal_3":  # Minimum payment only
@@ -185,102 +187,100 @@ def generate_education_rationale(
             rationale = (
                 f"Making only minimum payments of ${min_payment:.2f}/month on your balance of "
                 f"${balance:,.2f} means it will take much longer to pay off your debt. "
-                f"This content will help you create a payment plan."
+                f"This content will help you create a payment plan to pay down debt faster."
             )
         
         elif signal_id == "signal_4":  # Overdue
             primary_card = context_data.get('primary_card', {})
             min_payment = primary_card.get('min_payment', 0)
+            balance = primary_card.get('balance', 0)
             rationale = (
                 f"You have an overdue payment on your credit card ending in "
-                f"{primary_card.get('last_four', '****')}. Making a payment of ${min_payment:.2f} "
-                f"can help prevent further damage to your credit score."
+                f"{primary_card.get('last_four', '****')} (balance: ${balance:,.2f}). Making a payment of "
+                f"${min_payment:.2f} can help prevent further damage to your credit score."
             )
         
         elif signal_id == "signal_5":  # Variable income + low buffer
             buffer_months = context_data.get('cash_flow_buffer_months', 0)
             pay_gap = context_data.get('median_pay_gap_days', 0)
+            checking_balance = context_data.get('checking_balance', 0)
             rationale = (
                 f"With variable income (median pay gap of {pay_gap:.0f} days) and a cash-flow buffer "
-                f"of {buffer_months:.1f} months, this content will help you manage variable income "
-                f"and build financial stability."
+                f"of only {buffer_months:.1f} months (${checking_balance:,.2f}), this content will help "
+                f"you manage variable income and build financial stability."
             )
         
         elif signal_id == "signal_6":  # Subscription heavy
             recurring_count = context_data.get('recurring_count', 0)
             monthly_total = context_data.get('monthly_recurring_spend', 0)
             subscription_percent = context_data.get('subscription_share_percent', 0)
+            annual_total = context_data.get('annual_total', monthly_total * 12)
             rationale = (
                 f"You have {recurring_count} recurring subscriptions totaling ${monthly_total:.2f}/month "
-                f"({subscription_percent:.1f}% of your spending). This content will help you audit "
-                f"and optimize these subscriptions."
+                f"(${annual_total:,.2f}/year), which is {subscription_percent:.1f}% of your spending. "
+                f"This content will help you audit and optimize these subscriptions."
             )
         
         elif signal_id == "signal_7":  # Savings builder
             net_inflow = context_data.get('net_inflow', 0)
             growth_rate = context_data.get('growth_rate_percent', 0)
+            savings_balance = context_data.get('savings_balance', 0)
             rationale = (
-                f"You're saving ${net_inflow:.2f}/month with a {growth_rate:.1f}% growth rate. "
-                f"This content will help you optimize your savings strategy and reach your goals faster."
+                f"You're saving ${net_inflow:.2f}/month with a {growth_rate:.1f}% growth rate "
+                f"(${savings_balance:,.2f} total savings). This content will help you optimize "
+                f"your savings strategy and reach your goals faster."
             )
         
         elif signal_id == "signal_8":  # Mortgage high debt
             mortgage_balance = context_data.get('mortgage_balance', 0)
             balance_to_income = context_data.get('balance_to_income_ratio', 0)
+            annual_income = context_data.get('annual_income', 0)
             rationale = (
                 f"Your mortgage balance of ${mortgage_balance:,.2f} represents {balance_to_income:.1f}x "
-                f"your annual income. This content will help you understand your debt burden and "
-                f"explore options to manage it."
+                f"your annual income (${annual_income:,.2f}). This content will help you understand "
+                f"your debt burden and explore options to manage it."
             )
         
         elif signal_id == "signal_9":  # Mortgage high payment
             mortgage_payment = context_data.get('mortgage_payment', 0)
             payment_burden = context_data.get('payment_burden_percent', 0)
+            monthly_income = context_data.get('monthly_income', 0)
             rationale = (
                 f"Your monthly mortgage payment of ${mortgage_payment:.2f} represents "
-                f"{payment_burden:.1f}% of your income. This content will help you manage this "
-                f"payment burden and explore refinancing options."
+                f"{payment_burden:.1f}% of your ${monthly_income:,.2f}/month income. This content "
+                f"will help you manage this payment burden and explore refinancing options."
             )
         
         elif signal_id == "signal_10":  # Student loan high debt
             student_loan_balance = context_data.get('student_loan_balance', 0)
             balance_to_income = context_data.get('balance_to_income_ratio', 0)
+            annual_income = context_data.get('annual_income', 0)
             rationale = (
                 f"Your student loan balance of ${student_loan_balance:,.2f} represents "
-                f"{balance_to_income:.1f}x your annual income. This content will help you manage "
-                f"your student loan debt and explore repayment options."
+                f"{balance_to_income:.1f}x your annual income (${annual_income:,.2f}). This content "
+                f"will help you manage your student loan debt and explore repayment options."
             )
         
         elif signal_id == "signal_11":  # Student loan high payment
             student_loan_payment = context_data.get('student_loan_payment', 0)
             payment_burden = context_data.get('payment_burden_percent', 0)
+            monthly_income = context_data.get('monthly_income', 0)
+            estimated_idr = context_data.get('estimated_idr_payment', 0)
             rationale = (
                 f"Your monthly student loan payment of ${student_loan_payment:.2f} represents "
-                f"{payment_burden:.1f}% of your income. This content will help you manage this "
-                f"payment burden and explore income-driven repayment options."
+                f"{payment_burden:.1f}% of your ${monthly_income:,.2f}/month income. This content "
+                f"will help you manage this payment burden and explore income-driven repayment "
+                f"options (potentially lowering to ~${estimated_idr:.2f}/month)."
             )
         
         else:
-            # Fallback to persona-based rationale
+            # Fallback to persona-based rationale for unknown signals
             rationale = _generate_persona_based_rationale(
                 template, signals, accounts, liabilities, persona_id
             )
-    else:
-        # Fallback to persona-based rationale if no signal context
-        rationale = _generate_persona_based_rationale(
-            template, signals, accounts, liabilities, persona_id
-        )
-    
-    # Add contextual signals from persona comparison if available
-    if persona_assignment_30d and persona_assignment_180d:
-        contextual_note = generate_contextual_signals(
-            persona_assignment_30d,
-            persona_assignment_180d
-        )
-        if contextual_note:
-            rationale += f" {contextual_note}"
-    
-    return rationale
+        
+        # Don't add persona comparison context - keep focus on signal
+        return rationale
 
 
 def _generate_persona_based_rationale(
@@ -371,63 +371,143 @@ def generate_offer_rationale(
     Returns:
         Plain-language rationale string with contextual signals if available
     """
+    # Prioritize signal-specific rationale
+    if signal_context:
+        signal_id = signal_context.signal_id
+        context_data = signal_context.context_data
+        
+        if signal_id == "signal_1":  # High utilization
+            highest_card = context_data.get('highest_card', {})
+            utilization = highest_card.get('utilization', 0)
+            balance = highest_card.get('balance', 0)
+            limit = highest_card.get('limit', 0)
+            apr = highest_card.get('apr', 0)
+            rationale = (
+                f"Your credit card ending in {highest_card.get('last_four', '****')} is at "
+                f"{utilization:.1f}% utilization with a ${balance:,.2f} balance (limit: ${limit:,.2f}). "
+                f"This offer can help you reduce your utilization and save on interest charges."
+            )
+        
+        elif signal_id == "signal_2":  # Interest charges
+            highest_card = context_data.get('highest_card', {})
+            monthly_interest = highest_card.get('monthly_interest', 0)
+            balance = highest_card.get('balance', 0)
+            apr = highest_card.get('apr', 0)
+            rationale = (
+                f"You're paying ${monthly_interest:.2f}/month in interest on a ${balance:,.2f} balance "
+                f"at {apr:.1f}% APR. This offer can help you reduce or eliminate these interest charges."
+            )
+        
+        elif signal_id == "signal_3":  # Minimum payment only
+            highest_card = context_data.get('highest_card', {})
+            balance = highest_card.get('balance', 0)
+            min_payment = highest_card.get('min_payment', 0)
+            utilization = highest_card.get('utilization', 0)
+            rationale = (
+                f"You're only making minimum payments of ${min_payment:.2f}/month on a ${balance:,.2f} balance "
+                f"({utilization:.1f}% utilization). This offer can help you pay down debt faster and save money."
+            )
+        
+        elif signal_id == "signal_4":  # Overdue
+            primary_card = context_data.get('primary_card', {})
+            balance = primary_card.get('balance', 0)
+            min_payment = primary_card.get('min_payment', 0)
+            rationale = (
+                f"You have an overdue payment on your credit card ending in {primary_card.get('last_four', '****')} "
+                f"with a ${balance:,.2f} balance. This offer can help you get back on track and avoid further "
+                f"damage to your credit score."
+            )
+        
+        elif signal_id == "signal_5":  # Variable income + low buffer
+            buffer_months = context_data.get('cash_flow_buffer_months', 0)
+            pay_gap = context_data.get('median_pay_gap_days', 0)
+            checking_balance = context_data.get('checking_balance', 0)
+            rationale = (
+                f"With variable income (median pay gap of {pay_gap:.0f} days) and only {buffer_months:.1f} months "
+                f"of cash-flow buffer (${checking_balance:,.2f}), this offer can help you build financial stability "
+                f"and manage variable income better."
+            )
+        
+        elif signal_id == "signal_6":  # Subscription heavy
+            recurring_count = context_data.get('recurring_count', 0)
+            monthly_total = context_data.get('monthly_recurring_spend', 0)
+            annual_total = context_data.get('annual_total', monthly_total * 12)
+            potential_savings = context_data.get('potential_savings', monthly_total * 0.3)
+            rationale = (
+                f"You have {recurring_count} recurring subscriptions costing ${monthly_total:.2f}/month "
+                f"(${annual_total:,.2f}/year). This offer can help you identify and cancel unused subscriptions, "
+                f"potentially saving you ${potential_savings:.2f}/month."
+            )
+        
+        elif signal_id == "signal_7":  # Savings builder
+            net_inflow = context_data.get('net_inflow', 0)
+            growth_rate = context_data.get('growth_rate_percent', 0)
+            savings_balance = context_data.get('savings_balance', 0)
+            rationale = (
+                f"You're already saving ${net_inflow:.2f}/month with a {growth_rate:.1f}% growth rate "
+                f"(${savings_balance:,.2f} total). This offer can help you maximize your savings growth "
+                f"and reach your financial goals faster."
+            )
+        
+        elif signal_id == "signal_8":  # Mortgage high debt
+            mortgage_balance = context_data.get('mortgage_balance', 0)
+            balance_to_income = context_data.get('balance_to_income_ratio', 0)
+            annual_income = context_data.get('annual_income', 0)
+            rationale = (
+                f"Your mortgage balance of ${mortgage_balance:,.2f} represents {balance_to_income:.1f}x "
+                f"your annual income (${annual_income:,.2f}). This offer can help you manage this debt burden "
+                f"and explore options to reduce your monthly payments."
+            )
+        
+        elif signal_id == "signal_9":  # Mortgage high payment
+            mortgage_payment = context_data.get('mortgage_payment', 0)
+            payment_burden = context_data.get('payment_burden_percent', 0)
+            monthly_income = context_data.get('monthly_income', 0)
+            rationale = (
+                f"Your monthly mortgage payment of ${mortgage_payment:.2f} represents {payment_burden:.1f}% "
+                f"of your ${monthly_income:,.2f}/month income. This offer can help you reduce this payment burden "
+                f"through refinancing or other debt management options."
+            )
+        
+        elif signal_id == "signal_10":  # Student loan high debt
+            student_loan_balance = context_data.get('student_loan_balance', 0)
+            balance_to_income = context_data.get('balance_to_income_ratio', 0)
+            annual_income = context_data.get('annual_income', 0)
+            rationale = (
+                f"Your student loan balance of ${student_loan_balance:,.2f} represents {balance_to_income:.1f}x "
+                f"your annual income (${annual_income:,.2f}). This offer can help you manage this debt burden "
+                f"and explore repayment options like consolidation or refinancing."
+            )
+        
+        elif signal_id == "signal_11":  # Student loan high payment
+            student_loan_payment = context_data.get('student_loan_payment', 0)
+            payment_burden = context_data.get('payment_burden_percent', 0)
+            monthly_income = context_data.get('monthly_income', 0)
+            estimated_idr = context_data.get('estimated_idr_payment', 0)
+            rationale = (
+                f"Your monthly student loan payment of ${student_loan_payment:.2f} represents {payment_burden:.1f}% "
+                f"of your ${monthly_income:,.2f}/month income. This offer can help you reduce this payment burden "
+                f"through income-driven repayment plans (potentially lowering to ~${estimated_idr:.2f}/month) or refinancing."
+            )
+        
+        else:
+            # Fallback for unknown signals - use signal name
+            signal_name = signal_context.signal_name
+            rationale = (
+                f"Based on your {signal_name} pattern, this offer is relevant to your financial situation. "
+                f"{offer.educational_content}"
+            )
+        
+        return rationale
+    
+    # Fallback to persona-based rationale only if no signal context
     rationale_parts = []
     
     # Base rationale from offer's educational content
     rationale_parts.append(offer.educational_content)
     
-    # Add signal-specific context if available
-    if signal_context:
-        signal_id = signal_context.signal_id
-        context_data = signal_context.context_data
-        
-        if signal_id == "signal_1" or signal_id == "signal_2":  # High utilization or interest
-            highest_card = context_data.get('highest_card', {})
-            utilization = highest_card.get('utilization', signals.credit.max_utilization_percent)
-            rationale_parts.append(
-                f"With your credit utilization at {utilization:.1f}%, this offer could help you "
-                f"consolidate debt and reduce interest charges."
-            )
-        
-        elif signal_id == "signal_5":  # Variable income
-            buffer_months = context_data.get('cash_flow_buffer_months', signals.income.cash_flow_buffer_months)
-            rationale_parts.append(
-                f"Your current cash-flow buffer of {buffer_months:.1f} months could be improved "
-                f"with this offer, helping you build financial stability."
-            )
-        
-        elif signal_id == "signal_6":  # Subscriptions
-            monthly_total = context_data.get('monthly_recurring_spend', signals.subscriptions.monthly_recurring_spend)
-            rationale_parts.append(
-                f"Managing your ${monthly_total:.2f}/month in subscriptions could be easier "
-                f"with this tool."
-            )
-        
-        elif signal_id == "signal_7":  # Savings builder
-            net_inflow = context_data.get('net_inflow', signals.savings.net_inflow)
-            rationale_parts.append(
-                f"You're already saving ${net_inflow:.2f}/month - this offer could help "
-                f"you maximize your savings growth."
-            )
-        
-        elif signal_id in ["signal_8", "signal_9", "signal_10", "signal_11"]:  # Loan-related
-            if signal_id in ["signal_8", "signal_9"]:
-                mortgage_payment = context_data.get('mortgage_payment', signals.loans.mortgage_monthly_payment)
-                payment_burden = context_data.get('payment_burden_percent', 0)
-                rationale_parts.append(
-                    f"Your mortgage payment of ${mortgage_payment:.2f}/month ({payment_burden:.1f}% of income) "
-                    f"makes this offer particularly relevant for managing your debt burden."
-                )
-            else:
-                student_loan_payment = context_data.get('student_loan_payment', signals.loans.student_loan_monthly_payment)
-                payment_burden = context_data.get('payment_burden_percent', 0)
-                rationale_parts.append(
-                    f"Your student loan payment of ${student_loan_payment:.2f}/month ({payment_burden:.1f}% of income) "
-                    f"makes this offer particularly relevant for managing your debt burden."
-                )
-    
-    # Fallback to persona-specific context if no signal context
-    elif 'persona1_high_utilization' in offer.relevant_personas:
+    # Add persona-specific context if available
+    if 'persona1_high_utilization' in offer.relevant_personas:
         if signals.credit.max_utilization_percent >= 50:
             rationale_parts.append(
                 f"With your credit utilization at {signals.credit.max_utilization_percent:.1f}%, "
@@ -465,15 +545,6 @@ def generate_offer_rationale(
     
     # Combine rationale parts
     rationale = " ".join(rationale_parts)
-    
-    # Add contextual signals from 180-day persona comparison if available
-    if persona_assignment_30d and persona_assignment_180d:
-        contextual_note = generate_contextual_signals(
-            persona_assignment_30d,
-            persona_assignment_180d
-        )
-        if contextual_note:
-            rationale += f" {contextual_note}"
     
     return rationale
 

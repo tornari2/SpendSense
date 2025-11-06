@@ -82,7 +82,7 @@ def apply_guardrails(
         # They are flagged for operator review instead
         
         # STEP 4: Append mandatory disclosure
-        rec.content = append_disclosure(rec.content)
+        rec.content = append_disclosure(rec.content, rec.recommendation_type)
         
         # Add recommendation to filtered list
         filtered_recommendations.append(rec)
