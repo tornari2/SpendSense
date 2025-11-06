@@ -423,6 +423,38 @@ tr.primary-persona {
     line-height: 1.6;
 }
 
+.content-box h1,
+.content-box h2,
+.content-box h3,
+.content-box h4,
+.content-box h5,
+.content-box h6 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+.content-box h4 {
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.content-box p {
+    margin-bottom: 1rem;
+}
+
+.content-box ul,
+.content-box ol {
+    margin-left: 2rem;
+    margin-bottom: 1rem;
+    padding-left: 1rem;
+}
+
+.content-box li {
+    margin-bottom: 0.5rem;
+}
+
 .content-box pre {
     white-space: pre-wrap;
 }

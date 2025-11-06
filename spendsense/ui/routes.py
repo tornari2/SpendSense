@@ -53,8 +53,10 @@ def markdown_to_html(text):
     - **bold** -> <strong>bold</strong>
     - *italic* -> <em>italic</em>
     - Headers (# ## ###)
-    - Lists (• - *)
-    - Paragraphs
+    - Bold-only lines (**text**) -> <h4><strong>text</strong></h4>
+    - Numbered lists (1. 2. 3.)
+    - Bullet lists (• - *)
+    - Paragraphs with proper spacing
     
     IMPORTANT: This function receives raw text (not HTML-escaped).
     It returns Markup so Jinja2 treats the result as safe HTML.
@@ -68,18 +70,23 @@ def markdown_to_html(text):
     
     import re
     
+    # First, normalize multiple consecutive newlines to double newlines
+    # This ensures consistent paragraph spacing
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
     # Split into lines for processing
     lines = text.split('\n')
     result = []
-    in_list = False
+    in_ul_list = False
+    in_ol_list = False
     in_paragraph = False
     current_paragraph = []
     
     def close_paragraph():
         nonlocal in_paragraph, current_paragraph
         if in_paragraph and current_paragraph:
-            # Join with <br> tags to preserve line breaks within paragraphs
-            para_text = '<br>'.join(current_paragraph)
+            # Join with spaces for paragraph content
+            para_text = ' '.join(current_paragraph)
             # Process bold and italic in paragraph
             para_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', para_text)
             para_text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', para_text)
@@ -87,58 +94,118 @@ def markdown_to_html(text):
             current_paragraph = []
             in_paragraph = False
     
-    def close_list():
-        nonlocal in_list
-        if in_list:
+    def close_ul_list():
+        nonlocal in_ul_list
+        if in_ul_list:
             result.append('</ul>')
-            in_list = False
+            in_ul_list = False
     
-    for line in lines:
+    def close_ol_list():
+        nonlocal in_ol_list
+        if in_ol_list:
+            result.append('</ol>')
+            in_ol_list = False
+    
+    def close_all_lists():
+        close_ul_list()
+        close_ol_list()
+    
+    # Check if a line is a bold-only line (starts and ends with **)
+    def is_bold_header_line(line):
+        stripped = line.strip()
+        # Must start with ** and end with **, and contain no other text outside bold markers
+        return (stripped.startswith('**') and stripped.endswith('**') and 
+                len(stripped) > 4 and stripped.count('**') == 2)
+    
+    # Check if line is a numbered list item (starts with number followed by period)
+    def is_numbered_list_item(line):
+        stripped = line.strip()
+        # Match pattern: number followed by period and space
+        return bool(re.match(r'^\d+\.\s+', stripped))
+    
+    # Check if line is a bullet list item
+    def is_bullet_list_item(line):
+        stripped = line.strip()
+        return (
+            stripped.startswith('• ') or 
+            stripped.startswith('- ') or 
+            (stripped.startswith('* ') and not stripped.startswith('**'))
+        )
+    
+    for i, line in enumerate(lines):
         line_stripped = line.strip()
         
-        # Empty line - close current paragraph/list
+        # Empty line - close current paragraph/lists
         if not line_stripped:
             close_paragraph()
-            close_list()
+            close_all_lists()
             continue
         
         # Headers (must come before other processing)
         if line_stripped.startswith('### '):
             close_paragraph()
-            close_list()
+            close_all_lists()
             header_text = line_stripped[4:].strip()
             header_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', header_text)
             result.append(f'<h3>{header_text}</h3>')
             continue
         elif line_stripped.startswith('## '):
             close_paragraph()
-            close_list()
+            close_all_lists()
             header_text = line_stripped[3:].strip()
             header_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', header_text)
             result.append(f'<h2>{header_text}</h2>')
             continue
         elif line_stripped.startswith('# '):
             close_paragraph()
-            close_list()
+            close_all_lists()
             header_text = line_stripped[2:].strip()
             header_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', header_text)
             result.append(f'<h1>{header_text}</h1>')
             continue
         
-        # List items - check for bullet point (•) or dash (-) or asterisk (*) at start
-        is_list_item = (
-            line_stripped.startswith('• ') or 
-            line_stripped.startswith('- ') or 
-            (line_stripped.startswith('* ') and not line_stripped.startswith('**'))
+        # Check if this is a bold-only line (header-like)
+        # Check if it's followed by empty line OR if it ends with colon (like "**Why It Matters:**")
+        next_is_empty = (i + 1 < len(lines) and not lines[i + 1].strip())
+        ends_with_colon = line_stripped.endswith(':')
+        is_standalone_bold = (
+            line_stripped.startswith('**') and 
+            line_stripped.endswith('**') and
+            len(line_stripped) > 4 and
+            (is_bold_header_line(line_stripped) or next_is_empty or ends_with_colon)
         )
-        
-        if is_list_item:
+        if is_standalone_bold:
             close_paragraph()
-            if not in_list:
+            close_all_lists()
+            # Extract text between ** markers
+            header_text = re.sub(r'\*\*(.*?)\*\*', r'\1', line_stripped)
+            result.append(f'<h4><strong>{header_text}</strong></h4>')
+            continue
+        
+        # Numbered list items
+        if is_numbered_list_item(line_stripped):
+            close_paragraph()
+            close_ul_list()  # Close bullet list if open
+            if not in_ol_list:
+                result.append('<ol>')
+                in_ol_list = True
+            # Remove number and period, get text
+            item_text = re.sub(r'^\d+\.\s+', '', line_stripped)
+            # Process bold and italic in list items
+            item_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', item_text)
+            item_text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', item_text)
+            result.append(f'<li>{item_text}</li>')
+            continue
+        
+        # Bullet list items
+        if is_bullet_list_item(line_stripped):
+            close_paragraph()
+            close_ol_list()  # Close numbered list if open
+            if not in_ul_list:
                 result.append('<ul>')
-                in_list = True
+                in_ul_list = True
             # Remove bullet and get text
-            item_text = line_stripped[2:].strip()
+            item_text = re.sub(r'^[•\-*]\s+', '', line_stripped)
             # Process bold and italic in list items
             item_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', item_text)
             item_text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', item_text)
@@ -146,14 +213,14 @@ def markdown_to_html(text):
             continue
         
         # Regular paragraph line
-        close_list()
+        close_all_lists()
         if not in_paragraph:
             in_paragraph = True
         current_paragraph.append(line_stripped)
     
     # Close any open structures
     close_paragraph()
-    close_list()
+    close_all_lists()
     
     # Join result
     html = '\n'.join(result)
@@ -166,12 +233,17 @@ def markdown_to_html(text):
         for para in paragraphs:
             para = para.strip()
             if para:
-                # Process bold and italic
-                para = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', para)
-                para = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', para)
-                # Replace single newlines with <br> tags to preserve line breaks
-                para = para.replace('\n', '<br>')
-                html_parts.append(f'<p>{para}</p>')
+                # Check if it's a bold-only line
+                if is_bold_header_line(para):
+                    header_text = re.sub(r'\*\*(.*?)\*\*', r'\1', para)
+                    html_parts.append(f'<h4><strong>{header_text}</strong></h4>')
+                else:
+                    # Process bold and italic
+                    para = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', para)
+                    para = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', para)
+                    # Replace single newlines with spaces for paragraph flow
+                    para = para.replace('\n', ' ')
+                    html_parts.append(f'<p>{para}</p>')
         html = '\n'.join(html_parts)
     
     # If still empty (all text was in one paragraph with no structure), 
@@ -179,8 +251,8 @@ def markdown_to_html(text):
     if not html:
         html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
         html = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', html)
-        # Preserve line breaks by converting to <br> tags
-        html = html.replace('\n', '<br>')
+        # Replace newlines with spaces for paragraph flow
+        html = html.replace('\n', ' ')
         html = f'<p>{html}</p>'
     
     # Return as Markup so Jinja2 treats it as safe HTML

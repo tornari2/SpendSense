@@ -324,7 +324,7 @@
                     
                     <div class="recommendation-content">
                         <h5>Content:</h5>
-                        <div class="content-box">{{ rec.content|safe }}</div>
+                        <div class="content-box">{{ rec.content|markdown|safe }}</div>
                         
                         <h5>⭐ Rationale:</h5>
                         <div class="rationale-box">{{ rec.rationale }}</div>
@@ -417,7 +417,7 @@
                     
                     <div class="recommendation-content">
                         <h5>Content:</h5>
-                        <div class="content-box">{{ rec.content|safe }}</div>
+                        <div class="content-box">{{ rec.content|markdown|safe }}</div>
                         
                         <h5>⭐ Rationale:</h5>
                         <div class="rationale-box">{{ rec.rationale }}</div>

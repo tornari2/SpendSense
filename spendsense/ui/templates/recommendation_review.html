@@ -24,7 +24,7 @@
             
             <div class="review-content">
                 <h4>Content:</h4>
-                <div class="content-box">{{ rec.content|safe }}</div>
+                <div class="content-box">{{ rec.content|markdown|safe }}</div>
                 
                 <h4>⭐ Rationale:</h4>
                 <div class="rationale-box">{{ rec.rationale }}</div>

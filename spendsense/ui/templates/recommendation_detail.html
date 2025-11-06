@@ -28,7 +28,7 @@
         
         <div class="detail-content">
             <h3>Content:</h3>
-            <div class="content-box">{{ recommendation.content|safe }}</div>
+            <div class="content-box">{{ recommendation.content|markdown|safe }}</div>
             
             <h3>⭐ Rationale:</h3>
             <div class="rationale-box">{{ recommendation.rationale }}</div>
