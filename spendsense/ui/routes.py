@@ -50,8 +50,8 @@ templates.env.filters["tojson"] = tojson_filter
 
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    """Operator dashboard/home page."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    """Redirect to Users page."""
+    return RedirectResponse(url="/users", status_code=303)
 
 
 @router.post("/approve/{recommendation_id}")
