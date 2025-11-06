@@ -51,11 +51,23 @@
                 <p><strong>Persona:</strong> {{ trace.persona_assigned or "N/A" }}</p>
                 <p><strong>Reasoning:</strong> {{ trace.persona_reasoning or "N/A" }}</p>
                 
-                {% if trace.input_signals and trace.input_signals.persona_signals %}
-                <h4>Signals That Triggered This Recommendation:</h4>
+                {% if trace.triggered_signals %}
+                <h4>⭐ Signal That Triggered This Recommendation:</h4>
+                <p><strong>Signal ID(s):</strong> {{ trace.triggered_signals|join(', ') if trace.triggered_signals is iterable and trace.triggered_signals is not string else trace.triggered_signals }}</p>
+                {% if trace.input_signals and trace.input_signals.triggered_signal %}
+                <p><strong>Signal Name:</strong> {{ trace.input_signals.signal_name }}</p>
+                {% endif %}
+                {% if trace.signal_context %}
+                <h5>Signal Context:</h5>
+                <pre>{{ trace.signal_context|tojson }}</pre>
+                {% endif %}
+                {% elif trace.input_signals and trace.input_signals.persona_signals %}
+                <h4>Persona-Based Recommendation (No Specific Signal):</h4>
+                <p><em>This recommendation was generated based on persona assignment, not a specific signal trigger.</em></p>
+                <h4>Persona Signals Used:</h4>
                 <pre>{{ trace.input_signals.persona_signals|tojson }}</pre>
                 {% elif trace.input_signals %}
-                <h4>Signals That Triggered This Recommendation:</h4>
+                <h4>Signals Used:</h4>
                 <pre>{{ trace.input_signals|tojson }}</pre>
                 {% endif %}
                 

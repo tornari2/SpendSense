@@ -373,13 +373,16 @@ def user_detail_page(
         if trace:
             trace_dict = {
                 "trace_id": trace.trace_id,
-                "input_signals": trace.input_signals,
+                "input_signals": trace.input_signals if isinstance(trace.input_signals, dict) else json.loads(trace.input_signals) if trace.input_signals else {},
+                "triggered_signals": trace.triggered_signals if isinstance(trace.triggered_signals, (list, dict)) else json.loads(trace.triggered_signals) if trace.triggered_signals else None,
+                "signal_context": trace.signal_context if isinstance(trace.signal_context, dict) else json.loads(trace.signal_context) if trace.signal_context else None,
                 "persona_assigned": trace.persona_assigned,
                 "persona_reasoning": trace.persona_reasoning,
                 "template_used": trace.template_used,
-                "variables_inserted": trace.variables_inserted,
-                "eligibility_checks": trace.eligibility_checks,
-                "base_data": getattr(trace, 'base_data', None),  # Include base_data (backward compatible)
+                "offer_id": getattr(trace, 'offer_id', None),
+                "variables_inserted": trace.variables_inserted if isinstance(trace.variables_inserted, dict) else json.loads(trace.variables_inserted) if trace.variables_inserted else {},
+                "eligibility_checks": trace.eligibility_checks if isinstance(trace.eligibility_checks, dict) else json.loads(trace.eligibility_checks) if trace.eligibility_checks else {},
+                "base_data": trace.base_data if isinstance(trace.base_data, dict) else json.loads(trace.base_data) if trace.base_data else None,
                 "timestamp": trace.timestamp.isoformat(),
                 "version": trace.version
             }
@@ -456,6 +459,8 @@ def recommendation_review_page(
             trace_dict = {
                 "trace_id": trace.trace_id,
                 "input_signals": trace.input_signals if isinstance(trace.input_signals, dict) else json.loads(trace.input_signals) if trace.input_signals else {},
+                "triggered_signals": trace.triggered_signals if isinstance(trace.triggered_signals, (list, dict)) else json.loads(trace.triggered_signals) if trace.triggered_signals else None,
+                "signal_context": trace.signal_context if isinstance(trace.signal_context, dict) else json.loads(trace.signal_context) if trace.signal_context else None,
                 "persona_assigned": trace.persona_assigned,
                 "persona_reasoning": trace.persona_reasoning,
                 "template_used": trace.template_used,
@@ -524,14 +529,17 @@ def recommendation_detail_page(
     trace_dict = None
     if trace_record:
         trace_dict = {
+            "trace_id": trace_record.trace_id,
             "input_signals": trace_record.input_signals if isinstance(trace_record.input_signals, dict) else json.loads(trace_record.input_signals) if trace_record.input_signals else {},
+            "triggered_signals": trace_record.triggered_signals if isinstance(trace_record.triggered_signals, (list, dict)) else json.loads(trace_record.triggered_signals) if trace_record.triggered_signals else None,
+            "signal_context": trace_record.signal_context if isinstance(trace_record.signal_context, dict) else json.loads(trace_record.signal_context) if trace_record.signal_context else None,
             "persona_assigned": trace_record.persona_assigned,
             "persona_reasoning": trace_record.persona_reasoning,
             "template_used": trace_record.template_used,
             "offer_id": trace_record.offer_id,
             "variables_inserted": trace_record.variables_inserted if isinstance(trace_record.variables_inserted, dict) else json.loads(trace_record.variables_inserted) if trace_record.variables_inserted else {},
             "eligibility_checks": trace_record.eligibility_checks if isinstance(trace_record.eligibility_checks, dict) else json.loads(trace_record.eligibility_checks) if trace_record.eligibility_checks else {},
-            "base_data": getattr(trace_record, 'base_data', None) if isinstance(getattr(trace_record, 'base_data', None), dict) else json.loads(getattr(trace_record, 'base_data', None)) if getattr(trace_record, 'base_data', None) else None,  # Backward compatible
+            "base_data": trace_record.base_data if isinstance(trace_record.base_data, dict) else json.loads(trace_record.base_data) if trace_record.base_data else None,
             "timestamp": trace_record.timestamp.isoformat() if trace_record.timestamp else None,
             "version": trace_record.version
         }

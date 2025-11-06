@@ -38,11 +38,23 @@
                         <p><strong>Persona:</strong> {{ rec.decision_trace.persona_assigned }}</p>
                         <p><strong>Reasoning:</strong> {{ rec.decision_trace.persona_reasoning }}</p>
                         
-                        {% if rec.decision_trace.input_signals and rec.decision_trace.input_signals.persona_signals %}
-                        <h5>Signals That Triggered This Recommendation:</h5>
+                        {% if rec.decision_trace.triggered_signals %}
+                        <h5>⭐ Signal That Triggered This Recommendation:</h5>
+                        <p><strong>Signal ID(s):</strong> {{ rec.decision_trace.triggered_signals|join(', ') if rec.decision_trace.triggered_signals is iterable and rec.decision_trace.triggered_signals is not string else rec.decision_trace.triggered_signals }}</p>
+                        {% if rec.decision_trace.input_signals and rec.decision_trace.input_signals.triggered_signal %}
+                        <p><strong>Signal Name:</strong> {{ rec.decision_trace.input_signals.signal_name }}</p>
+                        {% endif %}
+                        {% if rec.decision_trace.signal_context %}
+                        <h6>Signal Context:</h6>
+                        <pre>{{ rec.decision_trace.signal_context|tojson }}</pre>
+                        {% endif %}
+                        {% elif rec.decision_trace.input_signals and rec.decision_trace.input_signals.persona_signals %}
+                        <h5>Persona-Based Recommendation (No Specific Signal):</h5>
+                        <p><em>This recommendation was generated based on persona assignment, not a specific signal trigger.</em></p>
+                        <h5>Persona Signals Used:</h5>
                         <pre>{{ rec.decision_trace.input_signals.persona_signals|tojson }}</pre>
                         {% elif rec.decision_trace.input_signals %}
-                        <h5>Signals That Triggered This Recommendation:</h5>
+                        <h5>Signals Used:</h5>
                         <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
                         {% endif %}
                         
@@ -106,7 +118,6 @@
                     </form>
                     {% endif %}
                     
-                    <a href="/recommendation/{{ rec.recommendation_id }}" class="btn btn-secondary">View Full Details</a>
                     <a href="/users/{{ rec.user_id }}" class="btn btn-secondary">View User</a>
                 </div>
             </div>
