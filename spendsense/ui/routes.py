@@ -376,12 +376,13 @@ def user_detail_page(
                 "template_used": trace.template_used,
                 "variables_inserted": trace.variables_inserted,
                 "eligibility_checks": trace.eligibility_checks,
+                "base_data": getattr(trace, 'base_data', None),  # Include base_data (backward compatible)
                 "timestamp": trace.timestamp.isoformat(),
                 "version": trace.version
             }
             decision_traces.append(trace_dict)
         
-        content_with_disclosure = append_disclosure(rec.content)
+        content_with_disclosure = append_disclosure(rec.content, rec.recommendation_type)
         
         recommendations_list.append({
             "recommendation_id": rec.recommendation_id,
@@ -395,6 +396,9 @@ def user_detail_page(
             "operator_notes": rec.operator_notes,
             "decision_trace": trace_dict
         })
+    
+    # Sort recommendations: offers first, then education
+    recommendations_list.sort(key=lambda x: (x["type"] != "offer", x["created_at"]))
     
     # Build user detail data structure
     user_detail_data = {
@@ -457,17 +461,19 @@ def recommendation_review_page(
         if trace:
             trace_dict = {
                 "trace_id": trace.trace_id,
-                "input_signals": trace.input_signals,
+                "input_signals": trace.input_signals if isinstance(trace.input_signals, dict) else json.loads(trace.input_signals) if trace.input_signals else {},
                 "persona_assigned": trace.persona_assigned,
                 "persona_reasoning": trace.persona_reasoning,
                 "template_used": trace.template_used,
-                "variables_inserted": trace.variables_inserted,
-                "eligibility_checks": trace.eligibility_checks,
+                "offer_id": getattr(trace, 'offer_id', None),
+                "variables_inserted": trace.variables_inserted if isinstance(trace.variables_inserted, dict) else json.loads(trace.variables_inserted) if trace.variables_inserted else {},
+                "eligibility_checks": trace.eligibility_checks if isinstance(trace.eligibility_checks, dict) else json.loads(trace.eligibility_checks) if trace.eligibility_checks else {},
+                "base_data": trace.base_data if isinstance(trace.base_data, dict) else json.loads(trace.base_data) if trace.base_data else None,
                 "timestamp": trace.timestamp.isoformat(),
                 "version": trace.version
             }
         
-        content_with_disclosure = append_disclosure(rec.content)
+        content_with_disclosure = append_disclosure(rec.content, rec.recommendation_type)
         
         operator_recs.append({
             "recommendation_id": rec.recommendation_id,
@@ -532,6 +538,7 @@ def recommendation_detail_page(
             "offer_id": trace_record.offer_id,
             "variables_inserted": trace_record.variables_inserted if isinstance(trace_record.variables_inserted, dict) else json.loads(trace_record.variables_inserted) if trace_record.variables_inserted else {},
             "eligibility_checks": trace_record.eligibility_checks if isinstance(trace_record.eligibility_checks, dict) else json.loads(trace_record.eligibility_checks) if trace_record.eligibility_checks else {},
+            "base_data": getattr(trace_record, 'base_data', None) if isinstance(getattr(trace_record, 'base_data', None), dict) else json.loads(getattr(trace_record, 'base_data', None)) if getattr(trace_record, 'base_data', None) else None,  # Backward compatible
             "timestamp": trace_record.timestamp.isoformat() if trace_record.timestamp else None,
             "version": trace_record.version
         }
