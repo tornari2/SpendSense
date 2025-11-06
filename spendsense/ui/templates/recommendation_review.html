@@ -60,9 +60,24 @@
                         <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
                         {% endif %}
                         
-                        {% if rec.decision_trace.template_used %}
-                        <h5>Template Used:</h5>
-                        <p>{{ rec.decision_trace.template_used }}</p>
+                        {% if rec.decision_trace.base_data %}
+                        <h5>⭐ User Data That Generated These Signals:</h5>
+                        <div class="base-data-section">
+                            {% if rec.decision_trace.base_data.accounts %}
+                            <h6>Accounts:</h6>
+                            <pre>{{ rec.decision_trace.base_data.accounts|tojson }}</pre>
+                            {% endif %}
+                            
+                            {% if rec.decision_trace.base_data.transactions %}
+                            <h6>Transactions ({{ rec.decision_trace.base_data.transactions|length }}):</h6>
+                            <pre>{{ rec.decision_trace.base_data.transactions|tojson }}</pre>
+                            {% endif %}
+                            
+                            {% if rec.decision_trace.base_data.liabilities %}
+                            <h6>Liabilities:</h6>
+                            <pre>{{ rec.decision_trace.base_data.liabilities|tojson }}</pre>
+                            {% endif %}
+                        </div>
                         {% endif %}
                         
                         {% if rec.decision_trace.offer_id %}
@@ -79,9 +94,6 @@
                         <h5>Eligibility Checks:</h5>
                         <pre>{{ rec.decision_trace.eligibility_checks|tojson }}</pre>
                         {% endif %}
-                    </div>
-                </details>
-                {% endif %}
                 
                 <!-- Review Actions - CRITICAL REQUIREMENT -->
                 <div class="review-actions">

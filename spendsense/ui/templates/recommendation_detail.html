@@ -51,9 +51,24 @@
                 <pre>{{ trace.input_signals|tojson }}</pre>
                 {% endif %}
                 
-                {% if trace.template_used %}
-                <h4>Template Used:</h4>
-                <p>{{ trace.template_used }}</p>
+                {% if trace.base_data %}
+                <h4>⭐ User Data That Generated These Signals:</h4>
+                <div class="base-data-section">
+                    {% if trace.base_data.accounts %}
+                    <h5>Accounts:</h5>
+                    <pre>{{ trace.base_data.accounts|tojson }}</pre>
+                    {% endif %}
+                    
+                    {% if trace.base_data.transactions %}
+                    <h5>Transactions ({{ trace.base_data.transactions|length }}):</h5>
+                    <pre>{{ trace.base_data.transactions|tojson }}</pre>
+                    {% endif %}
+                    
+                    {% if trace.base_data.liabilities %}
+                    <h5>Liabilities:</h5>
+                    <pre>{{ trace.base_data.liabilities|tojson }}</pre>
+                    {% endif %}
+                </div>
                 {% endif %}
                 
                 {% if trace.offer_id %}

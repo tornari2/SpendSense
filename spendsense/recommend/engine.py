@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from spendsense.personas.assignment import assign_persona, PersonaAssignment
 from spendsense.features.signals import calculate_signals, SignalSet
-from spendsense.ingest.schema import User, Account, Liability, Recommendation, DecisionTrace as DecisionTraceModel
+from spendsense.ingest.schema import User, Account, Liability, Transaction, Recommendation, DecisionTrace as DecisionTraceModel
 from spendsense.ingest.database import get_session
 from spendsense.guardrails.consent import check_consent
 
@@ -31,6 +31,7 @@ from .eligibility import filter_eligible_offers, EligibilityResult
 from .rationale import generate_education_rationale, generate_offer_rationale, extract_card_info
 from .trace import create_education_trace, create_offer_trace, trace_to_dict
 from spendsense.guardrails.disclosure import append_disclosure
+from spendsense.personas.priority import PERSONA_PRIORITY, PERSONA_NAMES
 
 
 @dataclass
@@ -110,11 +111,20 @@ def generate_recommendations(
         
         # Fetch accounts and liabilities
         accounts = session.query(Account).filter(Account.user_id == user_id).all()
-        credit_account_ids = [a.account_id for a in accounts if a.type == 'credit_card']
+        account_ids = [a.account_id for a in accounts]
+        
+        # Fetch all liabilities (not just credit card ones, for loan signals)
         liabilities = []
-        if credit_account_ids:
+        if account_ids:
             liabilities = session.query(Liability).filter(
-                Liability.account_id.in_(credit_account_ids)
+                Liability.account_id.in_(account_ids)
+            ).all()
+        
+        # Fetch all transactions (for base data in traces)
+        transactions = []
+        if account_ids:
+            transactions = session.query(Transaction).filter(
+                Transaction.account_id.in_(account_ids)
             ).all()
         
         # Calculate monthly income for loan-related signals
@@ -134,11 +144,35 @@ def generate_recommendations(
         if not triggered_signals:
             return []
         
-        recommendations = []
+        # Determine primary and secondary personas
+        primary_persona_id = primary_persona_assignment.persona_id if primary_persona_assignment.persona_id else None
+        secondary_persona_id = None
         
-        # Generate recommendations for ALL triggered signals
-        for signal_context in triggered_signals:
-            # Generate education recommendations for this signal
+        # Get secondary persona from matching_personas if available
+        if primary_persona_assignment.matching_personas and len(primary_persona_assignment.matching_personas) > 1:
+            # Sort by priority and get second matching persona
+            sorted_personas = sorted(
+                primary_persona_assignment.matching_personas,
+                key=lambda x: PERSONA_PRIORITY.get(x[0], 999)
+            )
+            if len(sorted_personas) > 1:
+                secondary_persona_id = sorted_personas[1][0]
+        
+        # Categorize signals by persona association
+        primary_signals, secondary_signals, other_signals = _categorize_signals_by_persona(
+            triggered_signals=triggered_signals,
+            primary_persona_id=primary_persona_id,
+            secondary_persona_id=secondary_persona_id
+        )
+        
+        # Generate recommendations in prioritized order
+        recommendations = []
+        education_count = 0
+        offer_count = 0
+        
+        # Priority 1: Primary persona signals (all educational content and offers)
+        for signal_context in primary_signals:
+            # Generate ALL educational content for this signal (no limit per signal)
             education_recs = _generate_education_recommendations_for_signal(
                 user_id=user_id,
                 signal_context=signal_context,
@@ -148,11 +182,16 @@ def generate_recommendations(
                 signals_180d=signals_180d,
                 accounts=accounts,
                 liabilities=liabilities,
-                max_per_signal=2  # Limit per signal to avoid too many recommendations
+                transactions=transactions,
+                max_per_signal=None  # No limit - generate all for primary persona
             )
-            recommendations.extend(education_recs)
+            # Add up to max_education limit
+            for rec in education_recs:
+                if education_count < max_education:
+                    recommendations.append(rec)
+                    education_count += 1
             
-            # Generate offer recommendations for this signal
+            # Generate ALL offers for this signal (no limit per signal)
             offer_recs = _generate_offer_recommendations_for_signal(
                 user_id=user_id,
                 user=user,
@@ -162,13 +201,103 @@ def generate_recommendations(
                 signals_30d=signals_30d,
                 signals_180d=signals_180d,
                 accounts=accounts,
-                max_per_signal=1  # Limit per signal
+                liabilities=liabilities,
+                transactions=transactions,
+                max_per_signal=None  # No limit - generate all for primary persona
             )
-            recommendations.extend(offer_recs)
+            # Add up to max_offers limit
+            for rec in offer_recs:
+                if offer_count < max_offers:
+                    recommendations.append(rec)
+                    offer_count += 1
+        
+        # Priority 2: Secondary persona signals (if space available)
+        if secondary_signals and (education_count < max_education or offer_count < max_offers):
+            for signal_context in secondary_signals:
+                # Generate educational content only if space available
+                if education_count < max_education:
+                    education_recs = _generate_education_recommendations_for_signal(
+                        user_id=user_id,
+                        signal_context=signal_context,
+                        persona_assignment_30d=persona_assignment_30d,
+                        persona_assignment_180d=persona_assignment_180d,
+                        signals_30d=signals_30d,
+                        signals_180d=signals_180d,
+                        accounts=accounts,
+                        liabilities=liabilities,
+                        transactions=transactions,
+                        max_per_signal=None  # No limit - generate all for secondary persona
+                    )
+                    for rec in education_recs:
+                        if education_count < max_education:
+                            recommendations.append(rec)
+                            education_count += 1
+                
+                # Generate offers only if space available
+                if offer_count < max_offers:
+                    offer_recs = _generate_offer_recommendations_for_signal(
+                        user_id=user_id,
+                        user=user,
+                        signal_context=signal_context,
+                        persona_assignment_30d=persona_assignment_30d,
+                        persona_assignment_180d=persona_assignment_180d,
+                        signals_30d=signals_30d,
+                        signals_180d=signals_180d,
+                        accounts=accounts,
+                        liabilities=liabilities,
+                        transactions=transactions,
+                        max_per_signal=None  # No limit - generate all for secondary persona
+                    )
+                    for rec in offer_recs:
+                        if offer_count < max_offers:
+                            recommendations.append(rec)
+                            offer_count += 1
+        
+        # Priority 3: Other signals (not associated with primary/secondary persona, if space available)
+        if other_signals and (education_count < max_education or offer_count < max_offers):
+            for signal_context in other_signals:
+                # Generate educational content only if space available
+                if education_count < max_education:
+                    education_recs = _generate_education_recommendations_for_signal(
+                        user_id=user_id,
+                        signal_context=signal_context,
+                        persona_assignment_30d=persona_assignment_30d,
+                        persona_assignment_180d=persona_assignment_180d,
+                        signals_30d=signals_30d,
+                        signals_180d=signals_180d,
+                        accounts=accounts,
+                        liabilities=liabilities,
+                        transactions=transactions,
+                        max_per_signal=None  # No limit - generate all for other signals
+                    )
+                    for rec in education_recs:
+                        if education_count < max_education:
+                            recommendations.append(rec)
+                            education_count += 1
+                
+                # Generate offers only if space available
+                if offer_count < max_offers:
+                    offer_recs = _generate_offer_recommendations_for_signal(
+                        user_id=user_id,
+                        user=user,
+                        signal_context=signal_context,
+                        persona_assignment_30d=persona_assignment_30d,
+                        persona_assignment_180d=persona_assignment_180d,
+                        signals_30d=signals_30d,
+                        signals_180d=signals_180d,
+                        accounts=accounts,
+                        liabilities=liabilities,
+                        transactions=transactions,
+                        max_per_signal=None  # No limit - generate all for other signals
+                    )
+                    for rec in offer_recs:
+                        if offer_count < max_offers:
+                            recommendations.append(rec)
+                            offer_count += 1
         
         # Apply disclosure to all recommendations BEFORE saving
         for rec in recommendations:
-            rec.content = append_disclosure(rec.content)
+            rec.content = append_disclosure(rec.content, rec.recommendation_type)
         
         # Save to database (with disclosure already included)
         _save_recommendations(recommendations, session=session)
@@ -180,6 +309,59 @@ def generate_recommendations(
             session.close()
 
 
+def _categorize_signals_by_persona(
+    triggered_signals: List[SignalContext],
+    primary_persona_id: Optional[str],
+    secondary_persona_id: Optional[str]
+) -> Tuple[List[SignalContext], List[SignalContext], List[SignalContext]]:
+    """
+    Categorize triggered signals by persona association.
+    
+    Args:
+        triggered_signals: List of all triggered signals
+        primary_persona_id: Primary persona ID
+        secondary_persona_id: Secondary persona ID (if available)
+    
+    Returns:
+        Tuple of (primary_signals, secondary_signals, other_signals)
+    """
+    # Map signals to personas
+    # Persona 1 (High Utilization): signals 1, 2, 3, 4
+    # Persona 2 (Variable Income): signal 5
+    # Persona 3 (Subscription Heavy): signal 6
+    # Persona 4 (Savings Builder): signal 7
+    # Persona 5 (Debt Burden): signals 8, 9, 10, 11
+    
+    PERSONA_SIGNALS = {
+        'persona1_high_utilization': ['signal_1', 'signal_2', 'signal_3', 'signal_4'],
+        'persona2_variable_income': ['signal_5'],
+        'persona3_subscription_heavy': ['signal_6'],
+        'persona4_savings_builder': ['signal_7'],
+        'persona5_debt_burden': ['signal_8', 'signal_9', 'signal_10', 'signal_11'],
+    }
+    
+    primary_signals = []
+    secondary_signals = []
+    other_signals = []
+    
+    # Get signal IDs for primary and secondary personas
+    primary_signal_ids = set(PERSONA_SIGNALS.get(primary_persona_id, [])) if primary_persona_id else set()
+    secondary_signal_ids = set(PERSONA_SIGNALS.get(secondary_persona_id, [])) if secondary_persona_id else set()
+    
+    # Categorize signals
+    for signal_context in triggered_signals:
+        signal_id = signal_context.signal_id
+        
+        if signal_id in primary_signal_ids:
+            primary_signals.append(signal_context)
+        elif signal_id in secondary_signal_ids:
+            secondary_signals.append(signal_context)
+        else:
+            other_signals.append(signal_context)
+    
+    return primary_signals, secondary_signals, other_signals
+
+
 def _generate_education_recommendations(
     user_id: str,
     persona_assignment: PersonaAssignment,
@@ -187,6 +369,7 @@ def _generate_education_recommendations(
     signals_180d: SignalSet,
     accounts: List[Account],
     liabilities: List[Liability],
+    transactions: List[Transaction],
     max_count: int = 5,
     persona_assignment_30d: Optional[PersonaAssignment] = None,
     persona_assignment_180d: Optional[PersonaAssignment] = None
@@ -201,6 +384,7 @@ def _generate_education_recommendations(
         signals_180d: 180-day signals
         accounts: User accounts
         liabilities: User liabilities
+        transactions: User transactions
         max_count: Maximum number of recommendations
     
     Returns:
@@ -247,7 +431,12 @@ def _generate_education_recommendations(
                 persona_assignment=persona_assignment,
                 signals_30d=signals_30d,
                 signals_180d=signals_180d,
-                variables=variables
+                variables=variables,
+                signal_context=None,  # No specific signal for persona-based recs
+                all_transactions=transactions,
+                all_accounts=accounts,
+                all_liabilities=liabilities,
+                rationale=rationale
             )
             
             # Create recommendation
@@ -279,6 +468,8 @@ def _generate_offer_recommendations(
     signals_30d: SignalSet,
     signals_180d: SignalSet,
     accounts: List[Account],
+    liabilities: List[Liability],
+    transactions: List[Transaction],
     max_count: int = 3,
     session: Session = None,
     persona_assignment_30d: Optional[PersonaAssignment] = None,
@@ -294,6 +485,8 @@ def _generate_offer_recommendations(
         signals_30d: 30-day signals
         signals_180d: 180-day signals
         accounts: User accounts
+        liabilities: User liabilities
+        transactions: User transactions
         max_count: Maximum number of recommendations
         session: Database session
     
@@ -338,7 +531,12 @@ def _generate_offer_recommendations(
             persona_assignment=persona_assignment,
             signals_30d=signals_30d,
             signals_180d=signals_180d,
-            eligibility_result=eligibility_result
+            eligibility_result=eligibility_result,
+            signal_context=None,  # No specific signal for persona-based recs
+            all_transactions=transactions,
+            all_accounts=accounts,
+            all_liabilities=liabilities,
+            rationale=rationale
         )
         
         # Create recommendation
@@ -367,7 +565,8 @@ def _generate_education_recommendations_for_signal(
     signals_180d: SignalSet,
     accounts: List[Account],
     liabilities: List[Liability],
-    max_per_signal: int = 2
+    transactions: List[Transaction],
+    max_per_signal: Optional[int] = 2
 ) -> List[GeneratedRecommendation]:
     """
     Generate education recommendations for a specific signal.
@@ -381,6 +580,7 @@ def _generate_education_recommendations_for_signal(
         signals_180d: 180-day signals
         accounts: User accounts
         liabilities: User liabilities
+        transactions: User transactions (for base data in traces)
         max_per_signal: Maximum recommendations per signal
     
     Returns:
@@ -395,7 +595,11 @@ def _generate_education_recommendations_for_signal(
         return []
     
     # Select templates (prioritize by category diversity)
-    selected_templates = _select_diverse_templates(templates, max_per_signal)
+    # If max_per_signal is None, select all templates
+    if max_per_signal is None:
+        selected_templates = templates
+    else:
+        selected_templates = _select_diverse_templates(templates, max_per_signal)
     
     # Get primary persona for display (use 30d if available, else 180d)
     primary_persona = persona_assignment_30d if persona_assignment_30d and persona_assignment_30d.persona_id else persona_assignment_180d
@@ -437,7 +641,11 @@ def _generate_education_recommendations_for_signal(
                 signals_30d=signals_30d,
                 signals_180d=signals_180d,
                 variables=variables,
-                signal_context=signal_context
+                signal_context=signal_context,
+                all_transactions=transactions,
+                all_accounts=accounts,
+                all_liabilities=liabilities,
+                rationale=rationale
             )
             
             # Create recommendation
@@ -471,7 +679,9 @@ def _generate_offer_recommendations_for_signal(
     signals_30d: SignalSet,
     signals_180d: SignalSet,
     accounts: List[Account],
-    max_per_signal: int = 1
+    liabilities: List[Liability],
+    transactions: List[Transaction],
+    max_per_signal: Optional[int] = 1
 ) -> List[GeneratedRecommendation]:
     """
     Generate partner offer recommendations for a specific signal.
@@ -485,6 +695,8 @@ def _generate_offer_recommendations_for_signal(
         signals_30d: 30-day signals
         signals_180d: 180-day signals
         accounts: User accounts
+        liabilities: User liabilities
+        transactions: User transactions (for base data in traces)
         max_per_signal: Maximum recommendations per signal
     
     Returns:
@@ -510,7 +722,11 @@ def _generate_offer_recommendations_for_signal(
         return []
     
     # Select top offers (prioritize by type diversity)
-    selected_offers = _select_diverse_offers(eligible_offers, max_per_signal)
+    # If max_per_signal is None, select all eligible offers
+    if max_per_signal is None:
+        selected_offers = eligible_offers
+    else:
+        selected_offers = _select_diverse_offers(eligible_offers, max_per_signal)
     
     # Get primary persona for display
     primary_persona = persona_assignment_30d if persona_assignment_30d and persona_assignment_30d.persona_id else persona_assignment_180d
@@ -540,7 +756,11 @@ def _generate_offer_recommendations_for_signal(
             signals_30d=signals_30d,
             signals_180d=signals_180d,
             eligibility_result=eligibility_result,
-            signal_context=signal_context
+            signal_context=signal_context,
+            all_transactions=transactions,
+            all_accounts=accounts,
+            all_liabilities=liabilities,
+            rationale=rationale
         )
         
         # Create recommendation
@@ -938,11 +1158,17 @@ def _save_recommendations(recommendations: List[GeneratedRecommendation], sessio
             trace_id=f"trace_{uuid.uuid4().hex[:12]}",
             recommendation_id=rec.recommendation_id,
             input_signals=trace['input_signals'],
+            triggered_signals=trace.get('triggered_signals'),
+            signal_context=trace.get('signal_context'),
             persona_assigned=trace['persona_assigned'],
             persona_reasoning=trace['persona_reasoning'],
             template_used=trace['template_used'],
             variables_inserted=trace['variables_inserted'],
+            variable_sources=trace.get('variable_sources'),
             eligibility_checks=trace['eligibility_checks'],
+            base_data=trace.get('base_data'),  # Include base_data
+            rationale_variables=trace.get('rationale_variables'),
+            rationale_variable_sources=trace.get('rationale_variable_sources'),
             timestamp=datetime.now(),
             version=trace['version']
         )

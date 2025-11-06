@@ -301,67 +301,162 @@
         <h3>⭐ Recommendations with Rationales</h3>
         
         {% if user_detail.recommendations %}
-            {% for rec in user_detail.recommendations %}
-            <div class="recommendation-card">
-                <div class="recommendation-header">
-                    <h4>{{ rec.type|title }} Recommendation</h4>
-                    <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
-                </div>
+            {% set offers = user_detail.recommendations | selectattr("type", "equalto", "offer") | list %}
+            {% set education = user_detail.recommendations | selectattr("type", "equalto", "education") | list %}
+            
+            <!-- Partner Offers Section -->
+            {% if offers %}
+            <div class="offers-section">
+                <h4>💼 Partner Offers</h4>
                 
-                <div class="recommendation-content">
-                    <h5>Content:</h5>
-                    <div class="content-box">{{ rec.content|safe }}</div>
-                    
-                    <h5>⭐ Rationale:</h5>
-                    <div class="rationale-box">{{ rec.rationale }}</div>
-                    
-                    <div class="recommendation-meta">
-                        <span>Persona: <strong>{{ rec.persona or "N/A" }}</strong></span>
-                        <span>Created: {{ rec.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+                {% for rec in offers %}
+                <div class="recommendation-card">
+                    <div class="recommendation-header">
+                        <h4>{{ rec.type|title }} Recommendation</h4>
+                        <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
                     </div>
                     
-                    <!-- Decision Trace - CRITICAL REQUIREMENT -->
-                    {% if rec.decision_trace %}
-                    <details class="decision-trace">
-                        <summary><strong>⭐ Decision Trace (Why this recommendation was made)</strong></summary>
-                        <div class="trace-content">
-                            <h6>Persona Assignment:</h6>
-                            <p><strong>Persona:</strong> {{ rec.decision_trace.persona_assigned }}</p>
-                            <p><strong>Reasoning:</strong> {{ rec.decision_trace.persona_reasoning }}</p>
-                            
-                            {% if rec.decision_trace.input_signals and rec.decision_trace.input_signals.persona_signals %}
-                            <h6>Signals That Triggered This Recommendation:</h6>
-                            <pre>{{ rec.decision_trace.input_signals.persona_signals|tojson }}</pre>
-                            {% elif rec.decision_trace.input_signals %}
-                            <h6>Signals That Triggered This Recommendation:</h6>
-                            <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
-                            {% endif %}
-                            
-                            {% if rec.decision_trace.template_used %}
-                            <h6>Template Used:</h6>
-                            <p>{{ rec.decision_trace.template_used }}</p>
-                            {% endif %}
-                            
-                            {% if rec.decision_trace.offer_id %}
-                            <h6>Offer ID:</h6>
-                            <p>{{ rec.decision_trace.offer_id }}</p>
-                            {% endif %}
-                            
-                            {% if rec.decision_trace.variables_inserted %}
-                            <h6>Variables Inserted:</h6>
-                            <pre>{{ rec.decision_trace.variables_inserted|tojson }}</pre>
-                            {% endif %}
-                            
-                            {% if rec.decision_trace.eligibility_checks %}
-                            <h6>Eligibility Checks:</h6>
-                            <pre>{{ rec.decision_trace.eligibility_checks|tojson }}</pre>
-                            {% endif %}
-                        </div>
-                    </details>
-                    {% endif %}
+                    <div class="recommendation-content">
+                        <h5>Content:</h5>
+                        <div class="content-box">{{ rec.content|safe }}</div>
+                        
+                        <h5>⭐ Rationale:</h5>
+                        <div class="rationale-box">{{ rec.rationale }}</div>
+                        
+                        <!-- Decision Trace - CRITICAL REQUIREMENT -->
+                        {% if rec.decision_trace %}
+                        <details class="decision-trace">
+                            <summary><strong>Decision Trace (Why this recommendation was made)</strong></summary>
+                            <div class="trace-content">
+                                {% if rec.decision_trace.input_signals and rec.decision_trace.input_signals.persona_signals %}
+                                <h6>Signals That Triggered This Recommendation:</h6>
+                                <pre>{{ rec.decision_trace.input_signals.persona_signals|tojson }}</pre>
+                                {% elif rec.decision_trace.input_signals %}
+                                <h6>Signals That Triggered This Recommendation:</h6>
+                                <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
+                                {% endif %}
+                                
+                                {% if rec.decision_trace.base_data %}
+                                <h6>⭐ User Data That Generated These Signals:</h6>
+                                <div class="base-data-section">
+                                    {% if rec.decision_trace.base_data.accounts %}
+                                    <h7>Accounts:</h7>
+                                    <pre>{{ rec.decision_trace.base_data.accounts|tojson }}</pre>
+                                    {% endif %}
+                                    
+                                    {% if rec.decision_trace.base_data.transactions %}
+                                    <h7>Transactions ({{ rec.decision_trace.base_data.transactions|length }}):</h7>
+                                    <pre>{{ rec.decision_trace.base_data.transactions|tojson }}</pre>
+                                    {% endif %}
+                                    
+                                    {% if rec.decision_trace.base_data.liabilities %}
+                                    <h7>Liabilities:</h7>
+                                    <pre>{{ rec.decision_trace.base_data.liabilities|tojson }}</pre>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                                
+                                {% if rec.decision_trace.offer_id %}
+                                <h6>Offer ID:</h6>
+                                <p>{{ rec.decision_trace.offer_id }}</p>
+                                {% endif %}
+                                
+                                {% if rec.decision_trace.variables_inserted %}
+                                <h6>Variables Inserted:</h6>
+                                <pre>{{ rec.decision_trace.variables_inserted|tojson }}</pre>
+                                {% endif %}
+                                
+                                {% if rec.decision_trace.eligibility_checks %}
+                                <h6>Eligibility Checks:</h6>
+                                <pre>{{ rec.decision_trace.eligibility_checks|tojson }}</pre>
+                                {% endif %}
+                            </div>
+                        </details>
+                        {% endif %}
+                    </div>
                 </div>
+                {% endfor %}
             </div>
-            {% endfor %}
+            {% endif %}
+            
+            <!-- Educational Materials Section -->
+            {% if education %}
+            <div class="education-section">
+                <h4>📚 Educational Materials</h4>
+                
+                {% for rec in education %}
+                <div class="recommendation-card">
+                    <div class="recommendation-header">
+                        <h4>{{ rec.type|title }} Recommendation</h4>
+                        <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
+                    </div>
+                    
+                    <div class="recommendation-content">
+                        <h5>Content:</h5>
+                        <div class="content-box">{{ rec.content|safe }}</div>
+                        
+                        <h5>⭐ Rationale:</h5>
+                        <div class="rationale-box">{{ rec.rationale }}</div>
+                        
+                        <!-- Decision Trace - CRITICAL REQUIREMENT -->
+                        {% if rec.decision_trace %}
+                        <details class="decision-trace">
+                            <summary><strong>Decision Trace (Why this recommendation was made)</strong></summary>
+                            <div class="trace-content">
+                                {% if rec.decision_trace.input_signals and rec.decision_trace.input_signals.persona_signals %}
+                                <h6>Signals That Triggered This Recommendation:</h6>
+                                <pre>{{ rec.decision_trace.input_signals.persona_signals|tojson }}</pre>
+                                {% elif rec.decision_trace.input_signals %}
+                                <h6>Signals That Triggered This Recommendation:</h6>
+                                <pre>{{ rec.decision_trace.input_signals|tojson }}</pre>
+                                {% endif %}
+                                
+                                {% if rec.decision_trace.base_data %}
+                                <h6>⭐ User Data That Generated These Signals:</h6>
+                                <div class="base-data-section">
+                                    {% if rec.decision_trace.base_data.accounts %}
+                                    <h7>Accounts:</h7>
+                                    <pre>{{ rec.decision_trace.base_data.accounts|tojson }}</pre>
+                                    {% endif %}
+                                    
+                                    {% if rec.decision_trace.base_data.transactions %}
+                                    <h7>Transactions ({{ rec.decision_trace.base_data.transactions|length }}):</h7>
+                                    <pre>{{ rec.decision_trace.base_data.transactions|tojson }}</pre>
+                                    {% endif %}
+                                    
+                                    {% if rec.decision_trace.base_data.liabilities %}
+                                    <h7>Liabilities:</h7>
+                                    <pre>{{ rec.decision_trace.base_data.liabilities|tojson }}</pre>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                                
+                                {% if rec.decision_trace.offer_id %}
+                                <h6>Offer ID:</h6>
+                                <p>{{ rec.decision_trace.offer_id }}</p>
+                                {% endif %}
+                                
+                                {% if rec.decision_trace.variables_inserted %}
+                                <h6>Variables Inserted:</h6>
+                                <pre>{{ rec.decision_trace.variables_inserted|tojson }}</pre>
+                                {% endif %}
+                                
+                                {% if rec.decision_trace.eligibility_checks %}
+                                <h6>Eligibility Checks:</h6>
+                                <pre>{{ rec.decision_trace.eligibility_checks|tojson }}</pre>
+                                {% endif %}
+                            </div>
+                        </details>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            {% if not offers and not education %}
+            <p class="empty-state">No recommendations available for this user</p>
+            {% endif %}
         {% else %}
             <p class="empty-state">No recommendations available for this user</p>
         {% endif %}
