@@ -86,7 +86,7 @@
                 
                 <!-- Review Actions - CRITICAL REQUIREMENT -->
                 <div class="review-actions">
-                    {% if rec.status == "pending" or rec.status == "flagged" %}
+                    {% if rec.status == "flagged" %}
                     <!-- Approve Button -->
                     <form method="post" action="/approve/{{ rec.recommendation_id }}" class="action-form">
                         <div class="form-group">
