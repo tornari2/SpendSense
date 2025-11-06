@@ -76,6 +76,9 @@ def update_consent(
     if not user:
         raise ValueError(f"User {user_id} not found")
     
+    # Get previous consent status before updating
+    previous_consent_status = user.consent_status
+    
     # Update user consent status
     user.consent_status = consent_status
     user.consent_timestamp = datetime.utcnow()
@@ -90,8 +93,76 @@ def update_consent(
     )
     session.add(consent_log)
     
-    # Commit changes
+    # Commit changes first
     session.commit()
+    
+    # If consent was just granted (was False/None, now True), regenerate recommendations
+    if consent_status and not previous_consent_status:
+        try:
+            # Delete any existing recommendations first
+            from spendsense.ingest.schema import Recommendation, DecisionTrace
+            recommendations = session.query(Recommendation).filter(
+                Recommendation.user_id == user_id
+            ).all()
+            
+            # Delete associated DecisionTrace records first
+            for rec in recommendations:
+                traces = session.query(DecisionTrace).filter(
+                    DecisionTrace.recommendation_id == rec.recommendation_id
+                ).all()
+                for trace in traces:
+                    session.delete(trace)
+            
+            # Delete all recommendations
+            for rec in recommendations:
+                session.delete(rec)
+            
+            if recommendations:
+                session.commit()
+                print(f"Deleted {len(recommendations)} existing recommendations for user {user_id} before regenerating")
+            
+            # Regenerate recommendations
+            from spendsense.recommend.engine import generate_recommendations
+            new_recommendations = generate_recommendations(
+                user_id=user_id,
+                session=session,
+                max_education=5,
+                max_offers=3
+            )
+            session.commit()
+            print(f"Generated {len(new_recommendations)} new recommendations for user {user_id} after consent grant")
+        except Exception as e:
+            # Log error but don't fail the consent update
+            session.rollback()
+            print(f"Warning: Failed to regenerate recommendations after consent grant: {e}")
+    
+    # If consent was revoked (was True, now False), delete all recommendations
+    elif not consent_status and previous_consent_status:
+        try:
+            from spendsense.ingest.schema import Recommendation, DecisionTrace
+            recommendations = session.query(Recommendation).filter(
+                Recommendation.user_id == user_id
+            ).all()
+            
+            # Delete associated DecisionTrace records first
+            for rec in recommendations:
+                traces = session.query(DecisionTrace).filter(
+                    DecisionTrace.recommendation_id == rec.recommendation_id
+                ).all()
+                for trace in traces:
+                    session.delete(trace)
+            
+            # Delete all recommendations
+            for rec in recommendations:
+                session.delete(rec)
+            
+            if recommendations:
+                session.commit()
+                print(f"Deleted {len(recommendations)} recommendations for user {user_id} after consent revocation")
+        except Exception as e:
+            # Log error but don't fail the consent update
+            session.rollback()
+            print(f"Warning: Failed to delete recommendations after consent revocation: {e}")
     
     return True
 
