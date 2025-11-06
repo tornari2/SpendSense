@@ -13,7 +13,15 @@
         <div class="detail-meta">
             <p><strong>User:</strong> <a href="/users/{{ recommendation.user_id }}">{{ recommendation.user_id }}</a></p>
             <p><strong>Type:</strong> {{ recommendation.recommendation_type|title }}</p>
-            <p><strong>Status:</strong> <span class="badge badge-{{ recommendation.status }}">{{ recommendation.status|title }}</span></p>
+            <p><strong>Status:</strong> 
+                {% if recommendation.status == "pending" %}
+                <form method="post" action="/flag/{{ recommendation.recommendation_id }}" style="display: inline;">
+                    <button type="submit" class="btn btn-warning btn-sm">🚩 Flag for Review</button>
+                </form>
+                {% else %}
+                <span class="badge badge-{{ recommendation.status }}">{{ recommendation.status|title }}</span>
+                {% endif %}
+            </p>
             <p><strong>Persona:</strong> {{ recommendation.persona or "N/A" }}</p>
             <p><strong>Created:</strong> {{ recommendation.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
         </div>
@@ -96,7 +104,7 @@
         
         <!-- Actions -->
         <div class="detail-actions">
-            {% if recommendation.status == "pending" or recommendation.status == "flagged" %}
+            {% if recommendation.status == "flagged" %}
             <form method="post" action="/approve/{{ recommendation.recommendation_id }}" class="action-form">
                 <div class="form-group">
                     <label for="notes">Notes (optional):</label>
@@ -111,14 +119,6 @@
                     <input type="text" id="reason" name="reason" required placeholder="Reason for override">
                 </div>
                 <button type="submit" class="btn btn-danger">⭐ Override/Reject</button>
-            </form>
-            
-            <form method="post" action="/flag/{{ recommendation.recommendation_id }}" class="action-form">
-                <div class="form-group">
-                    <label for="flag_reason">Flag Reason (required):</label>
-                    <input type="text" id="flag_reason" name="reason" required placeholder="Reason for flagging">
-                </div>
-                <button type="submit" class="btn btn-warning">⭐ Flag for Review</button>
             </form>
             {% endif %}
         </div>

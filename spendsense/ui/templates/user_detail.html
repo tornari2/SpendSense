@@ -313,7 +313,13 @@
                 <div class="recommendation-card">
                     <div class="recommendation-header">
                         <h4>{{ rec.type|title }} Recommendation</h4>
+                        {% if rec.status == "pending" %}
+                        <form method="post" action="/flag/{{ rec.recommendation_id }}" style="display: inline;">
+                            <button type="submit" class="btn btn-warning btn-sm">🚩 Flag for Review</button>
+                        </form>
+                        {% else %}
                         <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
+                        {% endif %}
                     </div>
                     
                     <div class="recommendation-content">
@@ -372,19 +378,6 @@
                                 {% endif %}
                             </div>
                         </details>
-                        {% endif %}
-                        
-                        <!-- Flag Button - Only show if not already flagged or approved/rejected -->
-                        {% if rec.status != "flagged" and rec.status != "approved" and rec.status != "rejected" %}
-                        <div class="recommendation-actions">
-                            <form method="post" action="/flag/{{ rec.recommendation_id }}" class="action-form">
-                                <div class="form-group">
-                                    <label for="flag_reason_{{ rec.recommendation_id }}">Flag Reason (required):</label>
-                                    <input type="text" id="flag_reason_{{ rec.recommendation_id }}" name="reason" required placeholder="Reason for flagging">
-                                </div>
-                                <button type="submit" class="btn btn-warning">⭐ Flag for Review</button>
-                            </form>
-                        </div>
                         {% endif %}
                     </div>
                 </div>
@@ -401,7 +394,13 @@
                 <div class="recommendation-card">
                     <div class="recommendation-header">
                         <h4>{{ rec.type|title }} Recommendation</h4>
+                        {% if rec.status == "pending" %}
+                        <form method="post" action="/flag/{{ rec.recommendation_id }}" style="display: inline;">
+                            <button type="submit" class="btn btn-warning btn-sm">🚩 Flag for Review</button>
+                        </form>
+                        {% else %}
                         <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
+                        {% endif %}
                     </div>
                     
                     <div class="recommendation-content">
@@ -460,19 +459,6 @@
                                 {% endif %}
                             </div>
                         </details>
-                        {% endif %}
-                        
-                        <!-- Flag Button - Only show if not already flagged or approved/rejected -->
-                        {% if rec.status != "flagged" and rec.status != "approved" and rec.status != "rejected" %}
-                        <div class="recommendation-actions">
-                            <form method="post" action="/flag/{{ rec.recommendation_id }}" class="action-form">
-                                <div class="form-group">
-                                    <label for="flag_reason_{{ rec.recommendation_id }}">Flag Reason (required):</label>
-                                    <input type="text" id="flag_reason_{{ rec.recommendation_id }}" name="reason" required placeholder="Reason for flagging">
-                                </div>
-                                <button type="submit" class="btn btn-warning">⭐ Flag for Review</button>
-                            </form>
-                        </div>
                         {% endif %}
                     </div>
                 </div>

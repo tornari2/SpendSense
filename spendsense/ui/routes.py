@@ -116,7 +116,7 @@ def override_recommendation_ui(
 def flag_recommendation_ui(
     request: Request,
     recommendation_id: str,
-    reason: str = Form(...),
+    reason: Optional[str] = Form(None),
     session: Session = Depends(get_db_session)
 ):
     """Flag recommendation from UI."""
@@ -134,7 +134,10 @@ def flag_recommendation_ui(
         )
     
     recommendation.status = "flagged"
-    recommendation.operator_notes = f"Flagged reason: {reason}"
+    if reason:
+        recommendation.operator_notes = f"Flagged reason: {reason}"
+    else:
+        recommendation.operator_notes = "Flagged for review"
     session.commit()
     
     return RedirectResponse(url=f"/review", status_code=303)
