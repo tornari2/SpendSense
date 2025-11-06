@@ -379,6 +379,7 @@ tr.primary-persona {
     margin-bottom: 1.5rem;
     border-radius: 4px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out, max-height 0.3s ease-out, margin-bottom 0.3s ease-out;
 }
 
 .offers-section {
@@ -416,6 +417,20 @@ tr.primary-persona {
     padding: 1rem;
     border-radius: 4px;
     margin: 0.5rem 0;
+}
+
+.rejection-reason-box {
+    background-color: #fee;
+    border-left: 3px solid #e74c3c;
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 4px;
+}
+
+.status-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .content-box {
@@ -687,9 +702,43 @@ code {
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+.user-navbar .nav-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.user-navbar .nav-right-section {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+}
+
 .user-navbar .nav-title {
     color: #2c3e50;
     font-size: 1.5rem;
+}
+
+.user-navbar .nav-menu {
+    display: flex;
+    list-style: none;
+    gap: 2rem;
+    margin: 0;
+    padding: 0;
+}
+
+.user-navbar .nav-menu a {
+    color: #2c3e50;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.user-navbar .nav-menu a:hover,
+.user-navbar .nav-menu a.active {
+    background-color: #e3f2fd;
+    color: #3498db;
 }
 
 .user-nav-controls {
@@ -835,7 +884,12 @@ code {
 
 /* User Recommendations Page */
 .user-recommendations-page {
-    padding: 2rem 0;
+    padding: 0.5rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .recommendations-header {
@@ -864,10 +918,161 @@ code {
     border-bottom: 2px solid #3498db;
 }
 
+/* Stacked Recommendations Layout */
+.recommendations-stacked {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+.recommendations-stacked::-webkit-scrollbar {
+    width: 10px;
+}
+
+.recommendations-stacked::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.recommendations-stacked::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.recommendations-stacked::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
 .user-recommendation-card {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     border-left: 4px solid #3498db;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out, max-height 0.3s ease-out, margin-bottom 0.3s ease-out;
+}
+
+.delete-recommendation-btn-small {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background-color 0.2s, transform 0.2s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    z-index: 10;
+    font-weight: bold;
+}
+
+.delete-recommendation-btn-small:hover {
+    background-color: #c0392b;
+    transform: scale(1.1);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.delete-recommendation-btn-small:active {
+    transform: scale(0.95);
+}
+
+.user-recommendation-card .recommendation-content {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    gap: 1rem;
+}
+
+.user-recommendation-card .recommendation-content-text {
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.5rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    max-height: 400px;
+}
+
+.user-recommendation-card .recommendation-content-text h1,
+.user-recommendation-card .recommendation-content-text h2,
+.user-recommendation-card .recommendation-content-text h3,
+.user-recommendation-card .recommendation-content-text h4,
+.user-recommendation-card .recommendation-content-text h5,
+.user-recommendation-card .recommendation-content-text h6 {
+    font-size: 1rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.user-recommendation-card .recommendation-content-text p {
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.user-recommendation-card .recommendation-content-text ul,
+.user-recommendation-card .recommendation-content-text ol {
+    margin-bottom: 0.5rem;
+    padding-left: 1.25rem;
+    font-size: 0.85rem;
+}
+
+.user-recommendation-card .recommendation-content-text li {
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.user-recommendation-card .recommendation-content-text::-webkit-scrollbar {
+    width: 8px;
+}
+
+.user-recommendation-card .recommendation-content-text::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.user-recommendation-card .recommendation-content-text::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.user-recommendation-card .recommendation-content-text::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.user-recommendation-card .recommendation-rationale {
+    flex-shrink: 0;
+    overflow: visible;
+    padding: 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    background-color: #e8f5e9;
+    border-left: 3px solid #27ae60;
+    border-radius: 3px;
+}
+
+.user-recommendation-card .recommendation-rationale h4 {
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    margin-top: 0;
+}
+
+.user-recommendation-card .recommendation-rationale p {
+    margin: 0;
+    font-size: 0.8rem;
 }
 
 .recommendation-header-user {
@@ -902,44 +1107,6 @@ code {
 
 .delete-recommendation-btn:active {
     transform: scale(0.95);
-}
-
-.user-recommendation-card .recommendation-content-text {
-    font-size: 1.1rem;
-    line-height: 1.6;
-    margin-bottom: 1rem;
-    color: #333;
-}
-
-.user-recommendation-card .recommendation-content-text h1,
-.user-recommendation-card .recommendation-content-text h2,
-.user-recommendation-card .recommendation-content-text h3,
-.user-recommendation-card .recommendation-content-text h4,
-.user-recommendation-card .recommendation-content-text h5,
-.user-recommendation-card .recommendation-content-text h6 {
-    margin-top: 1rem;
-    margin-bottom: 0.5rem;
-    color: #2c3e50;
-    font-weight: 600;
-}
-
-.user-recommendation-card .recommendation-content-text p {
-    margin-bottom: 1rem;
-}
-
-.user-recommendation-card .recommendation-content-text ul,
-.user-recommendation-card .recommendation-content-text ol {
-    margin-bottom: 1rem;
-    padding-left: 1.5rem;
-}
-
-.user-recommendation-card .recommendation-content-text li {
-    margin-bottom: 0.5rem;
-}
-
-.user-recommendation-card .recommendation-content-text strong {
-    font-weight: 600;
-    color: #2c3e50;
 }
 
 .recommendation-rationale {
@@ -984,11 +1151,15 @@ code {
 
 .user-main-content {
     background-color: #f8f9fa;
-    min-height: calc(100vh - 200px);
+    min-height: calc(100vh - 150px);
+    height: calc(100vh - 150px);
+    display: flex;
+    flex-direction: column;
+    padding: 0;
 }
 
 .user-footer {
-    margin-top: 2rem;
+    margin-top: 0;
 }
 
 .user-footer a {

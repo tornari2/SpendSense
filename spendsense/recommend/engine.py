@@ -76,10 +76,34 @@ def generate_recommendations(
         close_session = True
     
     try:
+        # CRITICAL: Check if recommendations already exist FIRST, before doing any work
+        # If any recommendations exist (pending, flagged, or approved), don't generate new ones
+        # This prevents duplicates and ensures recommendations are only generated once
+        # Refresh session to ensure we see latest state
+        session.expire_all()
+        existing_recommendations = session.query(Recommendation).filter(
+            Recommendation.user_id == user_id
+        ).filter(
+            Recommendation.status.in_(['pending', 'flagged', 'approved'])
+        ).count()
+        
+        if existing_recommendations > 0:
+            # Recommendations already exist - return empty list to prevent duplicates
+            # Callers should query existing recommendations from the database instead
+            print(f"Skipping recommendation generation for user {user_id}: {existing_recommendations} recommendations already exist (status: pending/flagged/approved)")
+            return []
+        
         # Fetch user
         user = session.query(User).filter(User.user_id == user_id).first()
         if not user:
             raise ValueError(f"User {user_id} not found")
+        
+        # Check consent BEFORE generating recommendations
+        # Non-consented users should have personas assigned but NO recommendations saved
+        has_consent, _ = check_consent(user_id, session)
+        if not has_consent:
+            # Return empty list - don't generate or save recommendations for non-consented users
+            return []
         
         # Calculate signals
         signals_30d, signals_180d = calculate_signals(user_id, session=session)
@@ -101,13 +125,6 @@ def generate_recommendations(
         if not persona_assignment_30d.persona_id and persona_assignment_180d.persona_id:
             # Use 180d persona as primary if no 30d persona exists
             primary_persona_assignment = persona_assignment_180d
-        
-        # Check consent BEFORE generating recommendations
-        # Non-consented users should have personas assigned but NO recommendations saved
-        has_consent, _ = check_consent(user_id, session)
-        if not has_consent:
-            # Return empty list - don't generate or save recommendations for non-consented users
-            return []
         
         # Fetch accounts and liabilities
         accounts = session.query(Account).filter(Account.user_id == user_id).all()
@@ -307,6 +324,19 @@ def generate_recommendations(
         # Apply disclosure to all recommendations BEFORE saving
         for rec in recommendations:
             rec.content = append_disclosure(rec.content, rec.recommendation_type)
+        
+        # FINAL CHECK: Double-check that no recommendations were created between start and now
+        # This prevents race conditions if multiple requests come in simultaneously
+        session.expire_all()
+        final_check = session.query(Recommendation).filter(
+            Recommendation.user_id == user_id
+        ).filter(
+            Recommendation.status.in_(['pending', 'flagged', 'approved'])
+        ).count()
+        
+        if final_check > 0:
+            print(f"WARNING: Recommendations were created for user {user_id} during generation. Skipping save to prevent duplicates.")
+            return []
         
         # Save to database (with disclosure already included)
         _save_recommendations(recommendations, session=session)
@@ -1120,6 +1150,9 @@ def _save_recommendations(recommendations: List[GeneratedRecommendation], sessio
     Before saving new recommendations, deletes all existing pending recommendations
     for the user to ensure only one set of recommendations exists at a time.
     Approved/rejected/flagged recommendations are preserved (they've been reviewed).
+    
+    CRITICAL: Prevents duplicate recommendations by checking if approved recommendations
+    with the same template_id (education) or offer_id (offers) already exist.
     """
     import json
     
@@ -1146,8 +1179,66 @@ def _save_recommendations(recommendations: List[GeneratedRecommendation], sessio
             session.delete(trace)
         session.delete(existing_rec)
     
-    # Now save the new recommendations
+    # Get all approved recommendations for this user to check for duplicates
+    existing_approved = session.query(Recommendation).filter(
+        Recommendation.user_id == user_id,
+        Recommendation.status == 'approved'
+    ).all()
+    
+    # Build lookup maps for approved recommendations
+    # For education: map template_used -> recommendation
+    # For offers: map offer_id -> recommendation (using content as key since offer_id not in DB)
+    approved_by_template = {}  # template_id -> Recommendation
+    approved_by_content = {}   # normalized_content -> Recommendation (for offers)
+    
+    for approved_rec in existing_approved:
+        trace = session.query(DecisionTraceModel).filter(
+            DecisionTraceModel.recommendation_id == approved_rec.recommendation_id
+        ).first()
+        
+        if trace:
+            # For education recommendations, use template_used
+            if approved_rec.recommendation_type == 'education' and trace.template_used:
+                approved_by_template[trace.template_used] = approved_rec
+            
+            # For offer recommendations, use normalized content as key
+            # (since offer_id isn't stored in DB schema, but content is unique per offer)
+            elif approved_rec.recommendation_type == 'offer':
+                # Normalize content by removing disclosure for comparison
+                from spendsense.guardrails.disclosure import OFFER_DISCLOSURE_TEXT, EDUCATION_DISCLOSURE_TEXT
+                normalized_content = approved_rec.content
+                # Remove both disclosure texts and normalize whitespace
+                normalized_content = normalized_content.replace(OFFER_DISCLOSURE_TEXT, '').replace(EDUCATION_DISCLOSURE_TEXT, '')
+                normalized_content = ' '.join(normalized_content.split())  # Normalize whitespace
+                approved_by_content[normalized_content] = approved_rec
+    
+    # Now save the new recommendations, skipping duplicates
     for rec in recommendations:
+        # Check if this recommendation is a duplicate of an approved one
+        is_duplicate = False
+        
+        if rec.recommendation_type == 'education' and rec.template_id:
+            # Check if there's an approved recommendation with the same template_id
+            if rec.template_id in approved_by_template:
+                is_duplicate = True
+                print(f"Skipping duplicate education recommendation: template_id={rec.template_id} already approved")
+        
+        elif rec.recommendation_type == 'offer':
+            # For offers, check if there's an approved recommendation with the same content
+            # Normalize content by removing disclosure for comparison
+            from spendsense.guardrails.disclosure import OFFER_DISCLOSURE_TEXT, EDUCATION_DISCLOSURE_TEXT
+            normalized_content = rec.content
+            # Remove both disclosure texts and normalize whitespace
+            normalized_content = normalized_content.replace(OFFER_DISCLOSURE_TEXT, '').replace(EDUCATION_DISCLOSURE_TEXT, '')
+            normalized_content = ' '.join(normalized_content.split())  # Normalize whitespace
+            
+            if normalized_content in approved_by_content:
+                is_duplicate = True
+                print(f"Skipping duplicate offer recommendation: offer_id={rec.offer_id} already approved (content match)")
+        
+        # Skip saving if it's a duplicate
+        if is_duplicate:
+            continue
         # Create Recommendation record
         recommendation = Recommendation(
             recommendation_id=rec.recommendation_id,

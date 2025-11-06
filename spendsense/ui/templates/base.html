@@ -15,7 +15,7 @@
                 <li><a href="/users" {% if request.url.path.startswith("/users") %}class="active"{% endif %}>Users</a></li>
                 <li><a href="/review" {% if request.url.path == "/review" %}class="active"{% endif %}>Review</a></li>
                 <li><a href="/evaluation" {% if request.url.path == "/evaluation" %}class="active"{% endif %}>Evaluation</a></li>
-                <li><a href="/user-view" {% if request.url.path.startswith("/user-view") %}class="active"{% endif %}>User View</a></li>
+                <li><a href="/user-view/user_0001" {% if request.url.path.startswith("/user-view") %}class="active"{% endif %}>Example User View</a></li>
             </ul>
         </div>
     </nav>

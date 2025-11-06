@@ -314,9 +314,12 @@
                     <div class="recommendation-header">
                         <h4>{{ rec.type|title }} Recommendation</h4>
                         {% if rec.status == "pending" %}
-                        <form method="post" action="/flag/{{ rec.recommendation_id }}" style="display: inline;">
-                            <button type="submit" class="btn btn-warning btn-sm">🚩 Flag for Review</button>
-                        </form>
+                        <button type="button" class="btn btn-warning btn-sm flag-btn" data-recommendation-id="{{ rec.recommendation_id }}">🚩 Flag for Review</button>
+                        {% elif rec.status == "approved" or rec.status == "rejected" %}
+                        <div class="status-actions">
+                            <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
+                            <button type="button" class="btn btn-warning btn-sm unflag-btn" data-recommendation-id="{{ rec.recommendation_id }}">🔄 Flag for Review</button>
+                        </div>
                         {% else %}
                         <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
                         {% endif %}
@@ -328,6 +331,17 @@
                         
                         <h5>⭐ Rationale:</h5>
                         <div class="rationale-box">{{ rec.rationale }}</div>
+                        
+                        {% if rec.status == "rejected" and rec.operator_notes %}
+                        <h5>Rejection Reason:</h5>
+                        <div class="rejection-reason-box">
+                            {% if rec.operator_notes.startswith("Override reason: ") %}
+                                {{ rec.operator_notes[17:] }}
+                            {% else %}
+                                {{ rec.operator_notes }}
+                            {% endif %}
+                        </div>
+                        {% endif %}
                         
                         <!-- Decision Trace - CRITICAL REQUIREMENT -->
                         {% if rec.decision_trace %}
@@ -407,9 +421,12 @@
                     <div class="recommendation-header">
                         <h4>{{ rec.type|title }} Recommendation</h4>
                         {% if rec.status == "pending" %}
-                        <form method="post" action="/flag/{{ rec.recommendation_id }}" style="display: inline;">
-                            <button type="submit" class="btn btn-warning btn-sm">🚩 Flag for Review</button>
-                        </form>
+                        <button type="button" class="btn btn-warning btn-sm flag-btn" data-recommendation-id="{{ rec.recommendation_id }}">🚩 Flag for Review</button>
+                        {% elif rec.status == "approved" or rec.status == "rejected" %}
+                        <div class="status-actions">
+                            <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
+                            <button type="button" class="btn btn-warning btn-sm unflag-btn" data-recommendation-id="{{ rec.recommendation_id }}">🔄 Flag for Review</button>
+                        </div>
                         {% else %}
                         <span class="badge badge-{{ rec.status }}">{{ rec.status|title }}</span>
                         {% endif %}
@@ -421,6 +438,17 @@
                         
                         <h5>⭐ Rationale:</h5>
                         <div class="rationale-box">{{ rec.rationale }}</div>
+                        
+                        {% if rec.status == "rejected" and rec.operator_notes %}
+                        <h5>Rejection Reason:</h5>
+                        <div class="rejection-reason-box">
+                            {% if rec.operator_notes.startswith("Override reason: ") %}
+                                {{ rec.operator_notes[17:] }}
+                            {% else %}
+                                {{ rec.operator_notes }}
+                            {% endif %}
+                        </div>
+                        {% endif %}
                         
                         <!-- Decision Trace - CRITICAL REQUIREMENT -->
                         {% if rec.decision_trace %}
@@ -498,5 +526,181 @@
         {% endif %}
     </section>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle flag button clicks without page reload
+    const flagButtons = document.querySelectorAll('.flag-btn');
+    
+    flagButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const recommendationId = this.getAttribute('data-recommendation-id');
+            const buttonElement = this;
+            
+            // Disable button to prevent double-clicks
+            buttonElement.disabled = true;
+            buttonElement.textContent = '⏳ Flagging...';
+            
+            // Flag the recommendation via fetch
+            fetch(`/flag/${recommendationId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                body: 'reason=',
+                redirect: 'manual' // Don't follow redirects automatically
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status >= 300 && response.status < 400) {
+                    // Handle redirect response (for backward compatibility)
+                    return { success: true };
+                } else {
+                    throw new Error('Failed to flag recommendation');
+                }
+            })
+            .then(data => {
+                if (data && data.success !== false) {
+                    // Update the UI to show flagged status
+                    const header = buttonElement.closest('.recommendation-header');
+                    if (header) {
+                        buttonElement.remove();
+                        const badge = document.createElement('span');
+                        badge.className = 'badge badge-flagged';
+                        badge.textContent = 'Flagged';
+                        header.appendChild(badge);
+                    }
+                } else {
+                    throw new Error(data.error || 'Failed to flag recommendation');
+                }
+            })
+            .catch(error => {
+                console.error('Error flagging recommendation:', error);
+                buttonElement.disabled = false;
+                buttonElement.textContent = '🚩 Flag for Review';
+                alert('Failed to flag recommendation. Please try again.');
+            });
+        });
+    });
+    
+    // Handle unflag button clicks (change approved/rejected back to flagged)
+    const unflagButtons = document.querySelectorAll('.unflag-btn');
+    
+    unflagButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const recommendationId = this.getAttribute('data-recommendation-id');
+            const buttonElement = this;
+            const card = this.closest('.recommendation-card');
+            
+            // Disable button to prevent double-clicks
+            buttonElement.disabled = true;
+            buttonElement.textContent = '⏳ Flagging...';
+            
+            // Change status back to flagged via fetch
+            fetch(`/unflag/${recommendationId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                redirect: 'manual'
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status >= 300 && response.status < 400) {
+                    return { success: true };
+                } else {
+                    throw new Error('Failed to flag recommendation');
+                }
+            })
+            .then(data => {
+                if (data && data.success !== false) {
+                    // Update the UI to show flagged status
+                    const header = buttonElement.closest('.recommendation-header');
+                    if (header) {
+                        // Remove the status-actions div
+                        const statusActions = header.querySelector('.status-actions');
+                        if (statusActions) {
+                            statusActions.remove();
+                        }
+                        // Add flag button
+                        const flagBtn = document.createElement('button');
+                        flagBtn.type = 'button';
+                        flagBtn.className = 'btn btn-warning btn-sm flag-btn';
+                        flagBtn.setAttribute('data-recommendation-id', recommendationId);
+                        flagBtn.textContent = '🚩 Flag for Review';
+                        header.appendChild(flagBtn);
+                        
+                        // Re-attach event listener to the new flag button
+                        flagBtn.addEventListener('click', function() {
+                            const recId = this.getAttribute('data-recommendation-id');
+                            const btnElement = this;
+                            btnElement.disabled = true;
+                            btnElement.textContent = '⏳ Flagging...';
+                            
+                            fetch(`/flag/${recId}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded',
+                                    'Accept': 'application/json'
+                                },
+                                body: 'reason=',
+                                redirect: 'manual'
+                            })
+                            .then(response => {
+                                if (response.ok) {
+                                    return response.json();
+                                } else if (response.status >= 300 && response.status < 400) {
+                                    return { success: true };
+                                } else {
+                                    throw new Error('Failed to flag recommendation');
+                                }
+                            })
+                            .then(data => {
+                                if (data && data.success !== false) {
+                                    btnElement.remove();
+                                    const badge = document.createElement('span');
+                                    badge.className = 'badge badge-flagged';
+                                    badge.textContent = 'Flagged';
+                                    header.appendChild(badge);
+                                } else {
+                                    throw new Error(data.error || 'Failed to flag recommendation');
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error flagging recommendation:', error);
+                                btnElement.disabled = false;
+                                btnElement.textContent = '🚩 Flag for Review';
+                                alert('Failed to flag recommendation. Please try again.');
+                            });
+                        });
+                        
+                        // Remove rejection reason if it exists
+                        const rejectionReason = card.querySelector('.rejection-reason-box');
+                        if (rejectionReason) {
+                            const rejectionHeading = rejectionReason.previousElementSibling;
+                            if (rejectionHeading && rejectionHeading.tagName === 'H5' && rejectionHeading.textContent.includes('Rejection Reason')) {
+                                rejectionHeading.remove();
+                            }
+                            rejectionReason.remove();
+                        }
+                    }
+                } else {
+                    throw new Error(data.error || 'Failed to flag recommendation');
+                }
+            })
+            .catch(error => {
+                console.error('Error flagging recommendation:', error);
+                buttonElement.disabled = false;
+                buttonElement.textContent = '🔄 Flag for Review';
+                alert('Failed to flag recommendation. Please try again.');
+            });
+        });
+    });
+});
+</script>
 {% endblock %}
 

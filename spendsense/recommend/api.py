@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
 from spendsense.ingest.database import get_session
-from spendsense.ingest.schema import User
+from spendsense.ingest.schema import User, Recommendation, DecisionTrace
 from .engine import generate_recommendations, GeneratedRecommendation
 from spendsense.guardrails import apply_guardrails
 from spendsense.api.exceptions import ConsentRequiredError, UserNotFoundError
@@ -57,7 +57,48 @@ def get_recommendations(
         if not user:
             raise UserNotFoundError(user_id)
         
-        # Generate recommendations
+        # Check if recommendations already exist in database
+        existing_db_recs = session.query(Recommendation).filter(
+            Recommendation.user_id == user_id
+        ).filter(
+            Recommendation.status.in_(['pending', 'flagged', 'approved'])
+        ).all()
+        
+        if existing_db_recs:
+            # Return existing recommendations from database
+            # Get decision traces to extract template_id and offer_id
+            recommendations_list = []
+            for rec in existing_db_recs:
+                trace = session.query(DecisionTrace).filter(
+                    DecisionTrace.recommendation_id == rec.recommendation_id
+                ).first()
+                
+                template_id = None
+                offer_id = None
+                if trace:
+                    template_id = trace.template_used
+                    # offer_id is not stored in DB schema
+                
+                recommendations_list.append({
+                    "recommendation_id": rec.recommendation_id,
+                    "type": rec.recommendation_type,
+                    "content": rec.content,
+                    "rationale": rec.rationale,
+                    "persona": rec.persona,
+                    "template_id": template_id,
+                    "offer_id": offer_id,
+                })
+            
+            return {
+                "user_id": user_id,
+                "persona": existing_db_recs[0].persona if existing_db_recs else None,
+                "recommendations": recommendations_list,
+                "count": len(recommendations_list),
+                "generated_at": datetime.now().isoformat(),
+                "violations": []
+            }
+        
+        # No existing recommendations - generate new ones
         recommendations = generate_recommendations(
             user_id=user_id,
             session=session,

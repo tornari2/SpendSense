@@ -6,22 +6,30 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>My Recommendations - SpendSense</title>
+    <title>Example User View - SpendSense</title>
     <link rel="stylesheet" href="/static/css/style.css?v=2">
 </head>
 <body class="user-view">
     <nav class="navbar user-navbar">
         <div class="nav-container">
             <h1 class="nav-title">SpendSense</h1>
-            <div class="user-nav-controls">
-                <span class="user-name">{{ user.name }}</span>
-                <label class="consent-toggle-label">
-                    <span class="consent-toggle-text">Consent</span>
-                    <span class="consent-toggle-wrapper">
-                        <input type="checkbox" id="consentToggle" class="consent-toggle" {% if user.consent_status %}checked{% endif %} data-user-id="{{ user.user_id }}">
-                        <span class="consent-toggle-slider"></span>
-                    </span>
-                </label>
+            <div class="nav-right-section">
+                <ul class="nav-menu">
+                    <li><a href="/users">Users</a></li>
+                    <li><a href="/review">Review</a></li>
+                    <li><a href="/evaluation">Evaluation</a></li>
+                    <li><a href="/user-view/user_0001" class="active">Example User View</a></li>
+                </ul>
+                <div class="user-nav-controls">
+                    <span class="user-name">{{ user.name }}</span>
+                    <label class="consent-toggle-label">
+                        <span class="consent-toggle-text">Consent</span>
+                        <span class="consent-toggle-wrapper">
+                            <input type="checkbox" id="consentToggle" class="consent-toggle" {% if user.consent_status %}checked{% endif %} data-user-id="{{ user.user_id }}">
+                            <span class="consent-toggle-slider"></span>
+                        </span>
+                    </label>
+                </div>
             </div>
         </div>
     </nav>
@@ -40,74 +48,26 @@
                 <p>We don't have any recommendations for you at this time. Recommendations will appear here once they are generated based on your financial activity.</p>
             </div>
             {% else %}
-            <div class="recommendations-header">
-                <h2>Your Personalized Recommendations</h2>
-                <p class="recommendations-subtitle">Based on your financial activity and spending patterns</p>
+            <!-- Stacked Recommendations Layout -->
+            <div class="recommendations-stacked">
+                {% for rec in recommendations %}
+                <div class="recommendation-card user-recommendation-card" data-recommendation-id="{{ rec.recommendation_id }}">
+                    <button class="delete-recommendation-btn-small" onclick="deleteRecommendation('{{ rec.recommendation_id }}', this)" title="Remove this recommendation">
+                        ×
+                    </button>
+                    <div class="recommendation-content">
+                        <div class="content-box recommendation-content-text">
+                            {{ rec.content|markdown|safe }}
+                        </div>
+                        
+                        <div class="recommendation-rationale">
+                            <h4>Why this recommendation?</h4>
+                            <p>{{ rec.rationale }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
             </div>
-            
-            {% set offers = recommendations | selectattr("type", "equalto", "offer") | list %}
-            {% set education = recommendations | selectattr("type", "equalto", "education") | list %}
-            
-            <!-- Partner Offers Section -->
-            {% if offers %}
-            <section class="recommendations-section offers-section">
-                <h3>Partner Offers</h3>
-                <div class="offer-disclaimer">
-                    <strong>Disclaimer:</strong> These offers are provided by our partner financial institutions. Please review all terms and conditions before accepting any offer.
-                </div>
-                
-                {% for rec in offers %}
-                <div class="recommendation-card user-recommendation-card">
-                    <div class="recommendation-header-user">
-                        <form method="post" action="/user-view/{{ user.user_id }}/recommendations/{{ rec.recommendation_id }}/delete" style="display: inline;">
-                            <button type="submit" class="delete-recommendation-btn" title="Remove this recommendation" onclick="return confirm('Are you sure you want to remove this recommendation?');">
-                                ×
-                            </button>
-                        </form>
-                    </div>
-                    <div class="recommendation-content">
-                        <div class="content-box recommendation-content-text">
-                            {{ rec.content|markdown|safe }}
-                        </div>
-                        
-                        <div class="recommendation-rationale">
-                            <h4>Why this recommendation?</h4>
-                            <p>{{ rec.rationale }}</p>
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
-            </section>
-            {% endif %}
-            
-            <!-- Educational Materials Section -->
-            {% if education %}
-            <section class="recommendations-section education-section">
-                <h3>Educational Resources</h3>
-                
-                {% for rec in education %}
-                <div class="recommendation-card user-recommendation-card">
-                    <div class="recommendation-header-user">
-                        <form method="post" action="/user-view/{{ user.user_id }}/recommendations/{{ rec.recommendation_id }}/delete" style="display: inline;">
-                            <button type="submit" class="delete-recommendation-btn" title="Remove this recommendation" onclick="return confirm('Are you sure you want to remove this recommendation?');">
-                                ×
-                            </button>
-                        </form>
-                    </div>
-                    <div class="recommendation-content">
-                        <div class="content-box recommendation-content-text">
-                            {{ rec.content|markdown|safe }}
-                        </div>
-                        
-                        <div class="recommendation-rationale">
-                            <h4>Why this recommendation?</h4>
-                            <p>{{ rec.rationale }}</p>
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
-            </section>
-            {% endif %}
             {% endif %}
         </div>
     </main>
@@ -115,27 +75,6 @@
     <footer class="footer user-footer">
         <p>SpendSense v1.0.0 | <a href="/users" style="color: white; text-decoration: underline;">Operator View</a></p>
     </footer>
-
-    <!-- Consent Modal - BLOCKS ENTIRE WINDOW -->
-    <div id="consentModal" class="consent-modal {% if not user.consent_status %}show{% endif %}">
-        <div class="consent-modal-content">
-            <h2>Consent Required</h2>
-            <p>To view personalized financial recommendations, please provide your consent.</p>
-            <p>By clicking "I Consent", you agree to:</p>
-            <ul>
-                <li>Allow SpendSense to analyze your financial data</li>
-                <li>Receive personalized recommendations based on your spending patterns</li>
-                <li>Share your data for recommendation generation purposes</li>
-            </ul>
-            <div class="consent-modal-actions">
-                <form method="post" action="/user-view/{{ user.user_id }}/consent" id="consentForm">
-                    <input type="hidden" name="consent_status" id="consentStatusInput" value="true">
-                    <button type="submit" class="btn btn-success btn-large">I Consent</button>
-                    <button type="button" class="btn btn-secondary btn-large" onclick="declineConsent()">Decline</button>
-                </form>
-            </div>
-        </div>
-    </div>
 
     <script>
         // Ensure page always reloads fresh data, especially after POST operations
@@ -149,77 +88,14 @@
         
         // Wait for DOM to be ready
         document.addEventListener('DOMContentLoaded', function() {
-            // Handle consent toggle
-            const consentToggle = document.getElementById('consentToggle');
-            const consentModal = document.getElementById('consentModal');
-            const consentStatusInput = document.getElementById('consentStatusInput');
-            
-            // Show modal on page load/refresh if user hasn't consented
-            // The modal should BLOCK the entire window when consent is False
-            const hasConsent = {{ 'true' if user.consent_status else 'false' }};
-            
-            // Always show modal if user hasn't consented (blocking popup)
-            if (!hasConsent && consentModal) {
-                consentModal.classList.add('show');
-                // Prevent body scroll when modal is open
-                document.body.style.overflow = 'hidden';
-            } else if (hasConsent && consentModal) {
-                consentModal.classList.remove('show');
-                document.body.style.overflow = '';
-            }
-            
-            function declineConsent() {
-                // Hide modal
-                if (consentModal) {
-                    consentModal.classList.remove('show');
-                    document.body.style.overflow = '';
-                }
-                
-                // Update consent status to false
-                fetch('/user-view/{{ user.user_id }}/consent', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: 'consent_status=false'
-                }).then(() => {
-                    // Redirect back to User View Selection page
-                    window.location.href = '/user-view';
-                }).catch(err => {
-                    console.error('Error updating consent:', err);
-                    // Still redirect even if there's an error
-                    window.location.href = '/user-view';
-                });
-            }
-            
-            // Make declineConsent available globally
-            window.declineConsent = declineConsent;
-            
-            // Handle consent form submission
-            const consentForm = document.getElementById('consentForm');
-            if (consentForm) {
-                consentForm.addEventListener('submit', function() {
-                    // Allow form to submit normally - page will reload after consent
-                    document.body.style.overflow = '';
-                });
-            }
-            
             // Handle consent toggle switch
+            const consentToggle = document.getElementById('consentToggle');
+            
             if (consentToggle) {
                 consentToggle.addEventListener('change', function() {
                     const consentStatus = this.checked;
                     const formData = new FormData();
                     formData.append('consent_status', consentStatus);
-                    
-                    if (consentStatus && consentModal) {
-                        // Hide modal when consent is granted
-                        consentModal.classList.remove('show');
-                        document.body.style.overflow = '';
-                    } else if (!consentStatus && consentModal) {
-                        // Show modal when consent is revoked
-                        consentModal.classList.add('show');
-                        document.body.style.overflow = 'hidden';
-                    }
                     
                     fetch('/user-view/{{ user.user_id }}/consent', {
                         method: 'POST',
@@ -232,6 +108,53 @@
                 });
             }
         });
+        
+        // Delete recommendation with smooth animation
+        function deleteRecommendation(recommendationId, buttonElement) {
+            const card = buttonElement.closest('.user-recommendation-card');
+            if (!card) return;
+            
+            // Get the card's height for smooth collapse animation
+            const cardHeight = card.offsetHeight;
+            const cardMargin = parseInt(window.getComputedStyle(card).marginBottom) || 0;
+            const totalHeight = cardHeight + cardMargin;
+            
+            // Add transition for smooth slide-up and fade
+            card.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out, max-height 0.3s ease-out, margin-bottom 0.3s ease-out';
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(-10px) scale(0.95)';
+            card.style.maxHeight = cardHeight + 'px';
+            card.style.overflow = 'hidden';
+            card.style.marginBottom = '0';
+            
+            // Collapse the card height
+            setTimeout(() => {
+                card.style.maxHeight = '0';
+                card.style.paddingTop = '0';
+                card.style.paddingBottom = '0';
+            }, 50);
+            
+            // Delete via API
+            fetch(`/user-view/{{ user.user_id }}/recommendations/${recommendationId}/delete`, {
+                method: 'POST'
+            }).then(() => {
+                // Wait for animation to complete, then remove element
+                setTimeout(() => {
+                    card.remove();
+                }, 350);
+            }).catch(err => {
+                console.error('Error deleting recommendation:', err);
+                // Reset card on error
+                card.style.opacity = '1';
+                card.style.transform = 'translateY(0) scale(1)';
+                card.style.maxHeight = '';
+                card.style.overflow = '';
+                card.style.marginBottom = '';
+                card.style.paddingTop = '';
+                card.style.paddingBottom = '';
+                alert('Failed to delete recommendation. Please try again.');
+            });
+        }
     </script>
 </body>
 </html>

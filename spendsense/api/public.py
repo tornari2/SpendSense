@@ -255,7 +255,60 @@ def get_recommendations(
     if not user:
         raise UserNotFoundError(user_id)
     
-    # Generate recommendations (consent check happens in guardrails)
+    # Check consent first
+    from spendsense.guardrails.consent import check_consent
+    has_consent, _ = check_consent(user_id, session)
+    if not has_consent:
+        raise ConsentRequiredError()
+    
+    # Check if recommendations already exist in database
+    existing_db_recs = session.query(Recommendation).filter(
+        Recommendation.user_id == user_id
+    ).filter(
+        Recommendation.status.in_(['pending', 'flagged', 'approved'])
+    ).all()
+    
+    if existing_db_recs:
+        # Return existing recommendations from database
+        # Get decision traces to extract template_id and offer_id
+        recommendation_items = []
+        for rec in existing_db_recs:
+            trace = session.query(DecisionTrace).filter(
+                DecisionTrace.recommendation_id == rec.recommendation_id
+            ).first()
+            
+            template_id = None
+            offer_id = None
+            if trace:
+                template_id = trace.template_used
+                # offer_id is not stored in DB schema, but we can try to extract from trace data
+                # For now, leave as None - it's not critical for the response
+            
+            recommendation_items.append(
+                RecommendationItem(
+                    recommendation_id=rec.recommendation_id,
+                    type=rec.recommendation_type,
+                    content=rec.content,
+                    rationale=rec.rationale,
+                    persona=rec.persona,
+                    template_id=template_id,
+                    offer_id=offer_id
+                )
+            )
+        
+        # Get persona from first recommendation
+        persona = existing_db_recs[0].persona if existing_db_recs else None
+        
+        return RecommendationResponse(
+            user_id=user_id,
+            persona=persona,
+            recommendations=recommendation_items,
+            count=len(recommendation_items),
+            generated_at=datetime.now().isoformat(),
+            violations=[]
+        )
+    
+    # No existing recommendations - generate new ones
     recommendations = generate_recommendations(
         user_id=user_id,
         session=session,

@@ -280,23 +280,37 @@ def approve_recommendation_ui(
     """Approve recommendation from UI."""
     from spendsense.ingest.schema import Recommendation
     from spendsense.api.exceptions import RecommendationNotFoundError
+    from fastapi.responses import JSONResponse
     
     recommendation = session.query(Recommendation).filter(
         Recommendation.recommendation_id == recommendation_id
     ).first()
     
     if not recommendation:
+        accept_header = request.headers.get("accept", "")
+        if "application/json" in accept_header:
+            return JSONResponse(
+                {"success": False, "error": f"Recommendation {recommendation_id} not found"},
+                status_code=404
+            )
         return templates.TemplateResponse(
             "error.html",
             {"request": request, "error": f"Recommendation {recommendation_id} not found"},
             status_code=404
         )
     
+    # Get user_id before updating
+    user_id = recommendation.user_id
+    
     recommendation.status = "approved"
     if notes:
         recommendation.operator_notes = notes
     session.commit()
     
+    # Return JSON for AJAX requests, redirect for form submissions
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header:
+        return JSONResponse({"success": True, "user_id": user_id, "status": "approved"})
     return RedirectResponse(url=f"/review", status_code=303)
 
 
@@ -309,23 +323,80 @@ def override_recommendation_ui(
 ):
     """Override recommendation from UI."""
     from spendsense.ingest.schema import Recommendation
+    from fastapi.responses import JSONResponse
     
     recommendation = session.query(Recommendation).filter(
         Recommendation.recommendation_id == recommendation_id
     ).first()
     
     if not recommendation:
+        accept_header = request.headers.get("accept", "")
+        if "application/json" in accept_header:
+            return JSONResponse(
+                {"success": False, "error": f"Recommendation {recommendation_id} not found"},
+                status_code=404
+            )
         return templates.TemplateResponse(
             "error.html",
             {"request": request, "error": f"Recommendation {recommendation_id} not found"},
             status_code=404
         )
     
+    # Get user_id before updating
+    user_id = recommendation.user_id
+    
     recommendation.status = "rejected"
     recommendation.operator_notes = f"Override reason: {reason}"
     session.commit()
     
+    # Return JSON for AJAX requests, redirect for form submissions
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header:
+        return JSONResponse({"success": True, "user_id": user_id, "status": "rejected"})
     return RedirectResponse(url=f"/review", status_code=303)
+
+
+@router.post("/unflag/{recommendation_id}")
+def unflag_recommendation_ui(
+    request: Request,
+    recommendation_id: str,
+    session: Session = Depends(get_db_session)
+):
+    """Change approved/rejected recommendation back to flagged status."""
+    from spendsense.ingest.schema import Recommendation
+    from fastapi.responses import JSONResponse
+    
+    recommendation = session.query(Recommendation).filter(
+        Recommendation.recommendation_id == recommendation_id
+    ).first()
+    
+    if not recommendation:
+        accept_header = request.headers.get("accept", "")
+        if "application/json" in accept_header:
+            return JSONResponse(
+                {"success": False, "error": f"Recommendation {recommendation_id} not found"},
+                status_code=404
+            )
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error": f"Recommendation {recommendation_id} not found"},
+            status_code=404
+        )
+    
+    # Get user_id before updating
+    user_id = recommendation.user_id
+    
+    # Change status back to flagged
+    recommendation.status = "flagged"
+    # Clear operator notes when unflagging (so they can be re-reviewed)
+    recommendation.operator_notes = None
+    session.commit()
+    
+    # Return JSON for AJAX requests
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header:
+        return JSONResponse({"success": True, "user_id": user_id, "status": "flagged"})
+    return RedirectResponse(url=f"/users/{user_id}", status_code=303)
 
 
 @router.post("/flag/{recommendation_id}")
@@ -337,17 +408,29 @@ def flag_recommendation_ui(
 ):
     """Flag recommendation from UI."""
     from spendsense.ingest.schema import Recommendation
+    from fastapi.responses import JSONResponse
     
     recommendation = session.query(Recommendation).filter(
         Recommendation.recommendation_id == recommendation_id
     ).first()
     
     if not recommendation:
-        return templates.TemplateResponse(
-            "error.html",
-            {"request": request, "error": f"Recommendation {recommendation_id} not found"},
-            status_code=404
-        )
+        if request.headers.get("content-type") == "application/x-www-form-urlencoded" and "X-Requested-With" not in request.headers:
+            # Regular form submission - return HTML error page
+            return templates.TemplateResponse(
+                "error.html",
+                {"request": request, "error": f"Recommendation {recommendation_id} not found"},
+                status_code=404
+            )
+        else:
+            # AJAX request - return JSON
+            return JSONResponse(
+                {"success": False, "error": f"Recommendation {recommendation_id} not found"},
+                status_code=404
+            )
+    
+    # Get user_id before updating
+    user_id = recommendation.user_id
     
     recommendation.status = "flagged"
     if reason:
@@ -356,7 +439,16 @@ def flag_recommendation_ui(
         recommendation.operator_notes = "Flagged for review"
     session.commit()
     
-    return RedirectResponse(url=f"/review", status_code=303)
+    # Check if this is an AJAX/fetch request
+    # Fetch requests typically don't send X-Requested-With, but we can check the Referer
+    # or use a simpler approach: check if Accept header includes JSON or if it's a fetch request
+    accept_header = request.headers.get("accept", "")
+    referer = request.headers.get("referer", "")
+    
+    # If Accept header includes JSON or if referer suggests it's from the user detail page (AJAX)
+    # We'll return JSON for all requests to keep it simple - JavaScript will handle the UI update
+    # Regular form submissions are now handled by JavaScript, so we always return JSON
+    return JSONResponse({"success": True, "user_id": user_id, "status": "flagged"})
 
 
 @router.get("/users", response_class=HTMLResponse)
@@ -834,18 +926,11 @@ def user_view_selection(
     session: Session = Depends(get_db_session)
 ):
     """
-    User View selection page - allows operator to select which user to view.
+    Example User View - always shows Allison Hill's recommendations.
+    Redirects to the user_view_page with user_0001.
     """
-    # Get all users
-    users = session.query(User).order_by(User.created_at.desc()).limit(50).all()
-    
-    return templates.TemplateResponse(
-        "user_view_selection.html",
-        {
-            "request": request,
-            "users": users
-        }
-    )
+    # Always redirect to user_0001 (Allison Hill)
+    return RedirectResponse(url="/user-view/user_0001", status_code=303)
 
 
 @router.get("/user-view/{user_id}", response_class=HTMLResponse)
@@ -858,10 +943,8 @@ def user_view_page(
     Display user-facing recommendations page.
     Shows only approved/pending recommendations (excludes flagged/rejected).
     Requires user consent to display recommendations.
-    If user has consented but no recommendations exist, generates them.
+    Does NOT auto-generate recommendations - only displays existing ones.
     """
-    from spendsense.recommend.engine import generate_recommendations
-    
     # Get user
     user = session.query(User).filter(User.user_id == user_id).first()
     
@@ -885,26 +968,6 @@ def user_view_page(
             Recommendation.status.in_(['pending', 'approved'])
         ).order_by(Recommendation.created_at.desc()).all()
         
-        # If user has consented but no recommendations exist, generate them
-        if not recommendations:
-            try:
-                generate_recommendations(
-                    user_id=user_id,
-                    session=session,
-                    max_education=5,
-                    max_offers=3
-                )
-                # Refresh session to ensure new recommendations are visible
-                session.expire_all()
-                # Refresh the query to get newly generated recommendations
-                recommendations = session.query(Recommendation).filter(
-                    Recommendation.user_id == user_id,
-                    Recommendation.status.in_(['pending', 'approved'])
-                ).order_by(Recommendation.created_at.desc()).all()
-            except Exception as e:
-                # Log error but continue - user will see "no recommendations" message
-                print(f"Warning: Failed to generate recommendations: {e}")
-        
         # Process recommendations for display - filter out hidden recommendations
         for rec in recommendations:
             # Skip hidden (user-deleted) recommendations
@@ -926,6 +989,9 @@ def user_view_page(
         
         # Sort recommendations: offers first, then education
         recommendations_list.sort(key=lambda x: (x["type"] != "offer", x["created_at"]))
+        
+        # Limit to max 8 recommendations
+        recommendations_list = recommendations_list[:8]
     else:
         # If consent is False, ensure no recommendations exist (cleanup orphaned records)
         # This is a safeguard in case recommendations weren't deleted when consent was revoked
@@ -982,11 +1048,10 @@ def update_user_consent(
 ):
     """
     Update user consent status from user-facing page.
-    If consent is granted, generate recommendations for the user.
+    If consent is granted, existing recommendations are deleted and will be regenerated on page load.
     If consent is revoked, delete all recommendations for the user.
     """
     from spendsense.guardrails.consent import update_consent
-    from spendsense.recommend.engine import generate_recommendations
     
     try:
         # Get current consent status before updating
@@ -1005,47 +1070,53 @@ def update_user_consent(
             notes=f"Consent {'granted' if consent_status else 'revoked'} via user interface"
         )
         
+        # Helper function to delete all recommendations and traces for a user
+        def delete_all_recommendations(user_id: str, session: Session):
+            """Delete all recommendations and associated DecisionTrace records for a user."""
+            recommendations = session.query(Recommendation).filter(
+                Recommendation.user_id == user_id
+            ).all()
+            
+            # Delete associated DecisionTrace records first (if they exist)
+            for rec in recommendations:
+                traces = session.query(DecisionTrace).filter(
+                    DecisionTrace.recommendation_id == rec.recommendation_id
+                ).all()
+                for trace in traces:
+                    session.delete(trace)
+            
+            # Delete all recommendations
+            for rec in recommendations:
+                session.delete(rec)
+            
+            return len(recommendations)
+        
         # If consent was just revoked (was True, now False), delete all recommendations
         if not consent_status and previous_consent_status:
             try:
-                # Get all recommendations for this user
-                recommendations = session.query(Recommendation).filter(
-                    Recommendation.user_id == user_id
-                ).all()
-                
-                # Delete associated DecisionTrace records first (if they exist)
-                for rec in recommendations:
-                    traces = session.query(DecisionTrace).filter(
-                        DecisionTrace.recommendation_id == rec.recommendation_id
-                    ).all()
-                    for trace in traces:
-                        session.delete(trace)
-                
-                # Delete all recommendations
-                for rec in recommendations:
-                    session.delete(rec)
-                
+                deleted_count = delete_all_recommendations(user_id, session)
                 session.commit()
-                print(f"Deleted {len(recommendations)} recommendations for user {user_id} after consent revocation")
+                print(f"Deleted {deleted_count} recommendations for user {user_id} after consent revocation")
             except Exception as e:
                 # Log error but don't fail the consent update
                 session.rollback()
                 print(f"Warning: Failed to delete recommendations after consent revocation: {e}")
         
-        # If consent was just granted (was False/None, now True), generate recommendations
+        # If consent was just granted (was False/None, now True), delete any existing recommendations
+        # Fresh recommendations will be generated when the page loads (in user_view_page)
         if consent_status and not previous_consent_status:
             try:
-                # Generate recommendations for the user
-                generate_recommendations(
-                    user_id=user_id,
-                    session=session,
-                    max_education=5,
-                    max_offers=3
-                )
+                # Delete any existing recommendations (in case they were cached/stored)
+                # This ensures we always generate fresh recommendations from current user data
+                existing_count = delete_all_recommendations(user_id, session)
+                if existing_count > 0:
+                    session.commit()
+                    print(f"Deleted {existing_count} existing recommendations for user {user_id} before regenerating")
+                # Note: Recommendations will be generated on next page load by user_view_page
             except Exception as e:
                 # Log error but don't fail the consent update
-                # Recommendations may be generated on next page load if needed
-                print(f"Warning: Failed to generate recommendations after consent grant: {e}")
+                session.rollback()
+                print(f"Warning: Failed to delete existing recommendations after consent grant: {e}")
         
         # Redirect back to user view page with cache-busting
         # Add timestamp to prevent browser from showing cached version

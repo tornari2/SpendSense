@@ -100,22 +100,22 @@
                 <div class="review-actions">
                     {% if rec.status == "flagged" %}
                     <!-- Approve Button -->
-                    <form method="post" action="/approve/{{ rec.recommendation_id }}" class="action-form">
+                    <div class="action-form" data-recommendation-id="{{ rec.recommendation_id }}">
                         <div class="form-group">
                             <label for="notes_{{ rec.recommendation_id }}">Notes (optional):</label>
-                            <input type="text" id="notes_{{ rec.recommendation_id }}" name="notes" placeholder="Optional notes">
+                            <input type="text" id="notes_{{ rec.recommendation_id }}" name="notes" placeholder="Optional notes" class="approve-notes-input">
                         </div>
-                        <button type="submit" class="btn btn-success">⭐ Approve</button>
-                    </form>
+                        <button type="button" class="btn btn-success approve-btn">⭐ Approve</button>
+                    </div>
                     
                     <!-- Override/Reject Button -->
-                    <form method="post" action="/override/{{ rec.recommendation_id }}" class="action-form">
+                    <div class="action-form" data-recommendation-id="{{ rec.recommendation_id }}">
                         <div class="form-group">
                             <label for="reason_{{ rec.recommendation_id }}">Reason (required):</label>
-                            <input type="text" id="reason_{{ rec.recommendation_id }}" name="reason" required placeholder="Reason for override">
+                            <input type="text" id="reason_{{ rec.recommendation_id }}" name="reason" required placeholder="Reason for override" class="reject-reason-input">
                         </div>
-                        <button type="submit" class="btn btn-danger">⭐ Override/Reject</button>
-                    </form>
+                        <button type="button" class="btn btn-danger reject-btn">⭐ Override/Reject</button>
+                    </div>
                     {% endif %}
                     
                     <a href="/users/{{ rec.user_id }}" class="btn btn-secondary">View User</a>
@@ -127,5 +127,170 @@
         <p class="empty-state">No flagged recommendations found. Flag recommendations from user pages to add them to the review queue.</p>
     {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle approve button clicks
+    const approveButtons = document.querySelectorAll('.approve-btn');
+    
+    approveButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const form = this.closest('.action-form');
+            const recommendationId = form.getAttribute('data-recommendation-id');
+            const notesInput = form.querySelector('.approve-notes-input');
+            const notes = notesInput ? notesInput.value : '';
+            const buttonElement = this;
+            const card = form.closest('.recommendation-review-card');
+            
+            // Disable button
+            buttonElement.disabled = true;
+            buttonElement.textContent = '⏳ Approving...';
+            
+            // Approve the recommendation via fetch
+            const formData = new URLSearchParams();
+            if (notes) {
+                formData.append('notes', notes);
+            }
+            
+            fetch(`/approve/${recommendationId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                body: formData.toString(),
+                redirect: 'manual'
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status >= 300 && response.status < 400) {
+                    return { success: true };
+                } else {
+                    throw new Error('Failed to approve recommendation');
+                }
+            })
+            .then(data => {
+                if (data && data.success !== false) {
+                    // Animate card removal with slide-up effect
+                    const cardHeight = card.offsetHeight;
+                    const cardMargin = parseInt(window.getComputedStyle(card).marginBottom) || 0;
+                    
+                    // Add transition for smooth slide-up and fade
+                    card.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out, max-height 0.3s ease-out, margin-bottom 0.3s ease-out';
+                    card.style.opacity = '0';
+                    card.style.transform = 'translateY(-10px) scale(0.95)';
+                    card.style.maxHeight = cardHeight + 'px';
+                    card.style.overflow = 'hidden';
+                    card.style.marginBottom = '0';
+                    
+                    // Collapse the card height
+                    setTimeout(() => {
+                        card.style.maxHeight = '0';
+                        card.style.paddingTop = '0';
+                        card.style.paddingBottom = '0';
+                    }, 50);
+                    
+                    // Remove card after animation completes
+                    setTimeout(() => {
+                        card.remove();
+                    }, 350);
+                } else {
+                    throw new Error(data.error || 'Failed to approve recommendation');
+                }
+            })
+            .catch(error => {
+                console.error('Error approving recommendation:', error);
+                buttonElement.disabled = false;
+                buttonElement.textContent = '⭐ Approve';
+                alert('Failed to approve recommendation. Please try again.');
+            });
+        });
+    });
+    
+    // Handle reject button clicks
+    const rejectButtons = document.querySelectorAll('.reject-btn');
+    
+    rejectButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const form = this.closest('.action-form');
+            const recommendationId = form.getAttribute('data-recommendation-id');
+            const reasonInput = form.querySelector('.reject-reason-input');
+            const reason = reasonInput ? reasonInput.value.trim() : '';
+            const buttonElement = this;
+            const card = form.closest('.recommendation-review-card');
+            
+            // Validate reason
+            if (!reason) {
+                alert('Please provide a reason for rejecting this recommendation.');
+                reasonInput.focus();
+                return;
+            }
+            
+            // Disable button
+            buttonElement.disabled = true;
+            buttonElement.textContent = '⏳ Rejecting...';
+            
+            // Reject the recommendation via fetch
+            const formData = new URLSearchParams();
+            formData.append('reason', reason);
+            
+            fetch(`/override/${recommendationId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                body: formData.toString(),
+                redirect: 'manual'
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else if (response.status >= 300 && response.status < 400) {
+                    return { success: true };
+                } else {
+                    throw new Error('Failed to reject recommendation');
+                }
+            })
+            .then(data => {
+                if (data && data.success !== false) {
+                    // Animate card removal with slide-up effect
+                    const cardHeight = card.offsetHeight;
+                    const cardMargin = parseInt(window.getComputedStyle(card).marginBottom) || 0;
+                    
+                    // Add transition for smooth slide-up and fade
+                    card.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out, max-height 0.3s ease-out, margin-bottom 0.3s ease-out';
+                    card.style.opacity = '0';
+                    card.style.transform = 'translateY(-10px) scale(0.95)';
+                    card.style.maxHeight = cardHeight + 'px';
+                    card.style.overflow = 'hidden';
+                    card.style.marginBottom = '0';
+                    
+                    // Collapse the card height
+                    setTimeout(() => {
+                        card.style.maxHeight = '0';
+                        card.style.paddingTop = '0';
+                        card.style.paddingBottom = '0';
+                    }, 50);
+                    
+                    // Remove card after animation completes
+                    setTimeout(() => {
+                        card.remove();
+                    }, 350);
+                } else {
+                    throw new Error(data.error || 'Failed to reject recommendation');
+                }
+            })
+            .catch(error => {
+                console.error('Error rejecting recommendation:', error);
+                buttonElement.disabled = false;
+                buttonElement.textContent = '⭐ Override/Reject';
+                alert('Failed to reject recommendation. Please try again.');
+            });
+        });
+    });
+});
+</script>
 {% endblock %}
 
