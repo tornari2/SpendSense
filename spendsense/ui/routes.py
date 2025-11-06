@@ -81,7 +81,7 @@ def approve_recommendation_ui(
         recommendation.operator_notes = notes
     session.commit()
     
-    return RedirectResponse(url=f"/review?status=pending", status_code=303)
+    return RedirectResponse(url=f"/review", status_code=303)
 
 
 @router.post("/override/{recommendation_id}")
@@ -109,7 +109,7 @@ def override_recommendation_ui(
     recommendation.operator_notes = f"Override reason: {reason}"
     session.commit()
     
-    return RedirectResponse(url=f"/review?status=pending", status_code=303)
+    return RedirectResponse(url=f"/review", status_code=303)
 
 
 @router.post("/flag/{recommendation_id}")
@@ -137,7 +137,7 @@ def flag_recommendation_ui(
     recommendation.operator_notes = f"Flagged reason: {reason}"
     session.commit()
     
-    return RedirectResponse(url=f"/review?status=flagged", status_code=303)
+    return RedirectResponse(url=f"/review", status_code=303)
 
 
 @router.get("/users", response_class=HTMLResponse)
@@ -430,25 +430,16 @@ def user_detail_page(
 @router.get("/review", response_class=HTMLResponse)
 def recommendation_review_page(
     request: Request,
-    status: str = Query("pending", description="Filter by status"),
     session: Session = Depends(get_db_session)
 ):
     """
-    Display recommendations awaiting review.
+    Display flagged recommendations awaiting review.
+    Only shows recommendations that have been flagged for review.
     """
-    # Query recommendations by status
-    query = session.query(Recommendation)
-    
-    if status == "pending":
-        query = query.filter(Recommendation.status == "pending")
-    elif status == "flagged":
-        query = query.filter(Recommendation.status == "flagged")
-    elif status == "approved":
-        query = query.filter(Recommendation.status == "approved")
-    elif status == "rejected":
-        query = query.filter(Recommendation.status == "rejected")
-    
-    recommendations = query.order_by(Recommendation.created_at.desc()).all()
+    # Query only flagged recommendations
+    recommendations = session.query(Recommendation).filter(
+        Recommendation.status == "flagged"
+    ).order_by(Recommendation.created_at.desc()).all()
     
     operator_recs = []
     for rec in recommendations:
@@ -492,8 +483,7 @@ def recommendation_review_page(
         "recommendation_review.html",
         {
             "request": request,
-            "recommendations": operator_recs,
-            "status_filter": status
+            "recommendations": operator_recs
         }
     )
 

@@ -4,22 +4,8 @@
 
 {% block content %}
 <div class="review-page">
-    <h2>Recommendation Review Queue</h2>
-    
-    <div class="filters">
-        <form method="get" action="/review" class="filter-form">
-            <div class="form-group">
-                <label for="status">Status:</label>
-                <select id="status" name="status">
-                    <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending</option>
-                    <option value="flagged" {% if status_filter == "flagged" %}selected{% endif %}>Flagged</option>
-                    <option value="approved" {% if status_filter == "approved" %}selected{% endif %}>Approved</option>
-                    <option value="rejected" {% if status_filter == "rejected" %}selected{% endif %}>Rejected</option>
-                </select>
-            </div>
-            <button type="submit" class="btn btn-primary">Filter</button>
-        </form>
-    </div>
+    <h2>Flagged Recommendations Review Queue</h2>
+    <p class="review-description">Only recommendations that have been flagged for review are shown here. Flag recommendations from individual user pages to add them to this queue.</p>
     
     {% if recommendations %}
         {% for rec in recommendations %}
@@ -118,15 +104,6 @@
                         </div>
                         <button type="submit" class="btn btn-danger">⭐ Override/Reject</button>
                     </form>
-                    
-                    <!-- Flag Button -->
-                    <form method="post" action="/flag/{{ rec.recommendation_id }}" class="action-form">
-                        <div class="form-group">
-                            <label for="flag_reason_{{ rec.recommendation_id }}">Flag Reason (required):</label>
-                            <input type="text" id="flag_reason_{{ rec.recommendation_id }}" name="reason" required placeholder="Reason for flagging">
-                        </div>
-                        <button type="submit" class="btn btn-warning">⭐ Flag for Review</button>
-                    </form>
                     {% endif %}
                     
                     <a href="/recommendation/{{ rec.recommendation_id }}" class="btn btn-secondary">View Full Details</a>
@@ -136,7 +113,7 @@
         </div>
         {% endfor %}
     {% else %}
-        <p class="empty-state">No recommendations found with status: {{ status_filter }}</p>
+        <p class="empty-state">No flagged recommendations found. Flag recommendations from user pages to add them to the review queue.</p>
     {% endif %}
 </div>
 {% endblock %}
